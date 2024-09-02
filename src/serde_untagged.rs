@@ -14,7 +14,7 @@
 //! #[serde(transparent)]
 //! struct IntOrString {
 //!     #[serde(with = "among::serde_untagged")]
-//!     inner: Among<Vec<String>, HashMap<String, i32>>
+//!     inner: Among<Vec<String>, Box<str>, HashMap<String, i32>>
 //! };
 //!
 //! // serialization

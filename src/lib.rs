@@ -1,16 +1,6 @@
-//! The enum [`Among`] with variants `Left`, `Middle` and `Right` is a general purpose
-//! sum type with three cases.
-//!
-//! [`Among`]: enum.Among.html
-//!
-//! **Crate features:**
-//!
-//! * `"std"`
-//!   Enabled by default. Disable to make the library `#![no_std]`.
-//!
-//! * `"serde"`
-//!   Disabled by default. Enable to `#[derive(Serialize, Deserialize)]` for `Among`
-//!
+// This code is inspired and modified based on [`rayon-rs/either`](https://github.com/rayon-rs/either).
+
+#![doc = include_str!("../README.md")]
 #![no_std]
 
 #[cfg(any(test, feature = "std"))]
@@ -21,6 +11,15 @@ pub mod serde_untagged;
 
 #[cfg(feature = "serde")]
 pub mod serde_untagged_optional;
+
+#[cfg(feature = "either")]
+mod either_impl;
+
+#[cfg(all(feature = "futures-io", feature = "std"))]
+mod futures_impl;
+
+#[cfg(feature = "tokio")]
+mod tokio_impl;
 
 use core::convert::{AsMut, AsRef};
 use core::fmt;
@@ -64,16 +63,19 @@ pub enum Among<L, M, R> {
 ///
 /// ```
 /// use among::Among;
+/// use std::borrow::Cow;
 ///
-/// fn length(owned_or_borrowed: Among<String, &'static str>) -> usize {
+/// fn length(owned_or_borrowed: Among<String, Cow<'static, str>, &'static str>) -> usize {
 ///     among::for_all!(owned_or_borrowed, s => s.len())
 /// }
 ///
 /// fn main() {
 ///     let borrowed = Among::Right("Hello world!");
 ///     let owned = Among::Left("Hello world!".to_owned());
+///     let mixed = Among::Middle(Cow::Borrowed("Hello world!"));
 ///
 ///     assert_eq!(length(borrowed), 12);
+///     assert_eq!(length(mixed), 12);
 ///     assert_eq!(length(owned), 12);
 /// }
 /// ```
@@ -84,63 +86,6 @@ macro_rules! for_all {
       $crate::Among::Middle($pattern) => $result,
       $crate::Among::Left($pattern) => $result,
       $crate::Among::Right($pattern) => $result,
-    }
-  };
-}
-
-/// Macro for unwrapping the left side of an [`Among`], which fails early
-/// with the opposite side. Can only be used in functions that return
-/// `Among` because of the early return of `Right` that it provides.
-///
-/// See also [`try_right!`] for its dual, which applies the same just to the
-/// right side.
-///
-/// # Example
-///
-/// ```
-/// use among::{Among, Left, Right};
-///
-/// fn twice(wrapper: Among<u32, &str>) -> Among<u32, &str> {
-///     let value = among::try_left!(wrapper);
-///     Left(value * 2)
-/// }
-///
-/// fn main() {
-///     assert_eq!(twice(Left(2)), Left(4));
-///     assert_eq!(twice(Right("ups")), Right("ups"));
-/// }
-/// ```
-#[macro_export]
-macro_rules! try_left {
-  ($expr:expr) => {
-    match $expr {
-      $crate::Left(val) => val,
-      $crate::Middle(err) => return $crate::Middle(::core::convert::From::from(err)),
-      $crate::Right(err) => return $crate::Right(::core::convert::From::from(err)),
-    }
-  };
-}
-
-/// Dual to [`try_middle!`], see its documentation for more information.
-#[macro_export]
-macro_rules! try_middle {
-  ($expr:expr) => {
-    match $expr {
-      $crate::Middle(val) => val,
-      $crate::Left(err) => return $crate::Left(::core::convert::From::from(err)),
-      $crate::Right(err) => return $crate::Right(::core::convert::From::from(err)),
-    }
-  };
-}
-
-/// Dual to [`try_left!`], see its documentation for more information.
-#[macro_export]
-macro_rules! try_right {
-  ($expr:expr) => {
-    match $expr {
-      $crate::Left(err) => return $crate::Left(::core::convert::From::from(err)),
-      $crate::Middle(err) => return $crate::Middle(::core::convert::From::from(err)),
-      $crate::Right(val) => val,
     }
   };
 }
@@ -220,9 +165,9 @@ impl<L, M, R> Among<L, M, R> {
   /// use among::*;
   ///
   /// let values = [Left(1), Middle(b"the middle value"), Right("the right value")];
-  /// assert_eq!(values[0].is_right(), false);
-  /// assert_eq!(values[1].is_right(), true);
-  /// assert_eq!(values[2].is_right(), false);
+  /// assert_eq!(values[0].is_middle(), false);
+  /// assert_eq!(values[1].is_middle(), true);
+  /// assert_eq!(values[2].is_middle(), false);
   /// ```
   pub fn is_middle(&self) -> bool {
     match *self {
@@ -242,7 +187,7 @@ impl<L, M, R> Among<L, M, R> {
   /// let right: Among<(), i64, _> = Right(321);
   /// assert_eq!(right.left(), None);
   ///
-  /// let middle: Among<(), i64, _> = Middle(-321);
+  /// let middle: Among<(), i64, ()> = Middle(-321);
   /// assert_eq!(middle.left(), None);
   /// ```
   pub fn left(self) -> Option<L> {
@@ -263,7 +208,7 @@ impl<L, M, R> Among<L, M, R> {
   /// let right: Among<(), i64, _> = Right(321);
   /// assert_eq!(right.middle(), None);
   ///
-  /// let middle: Among<(), i64, _> = Middle(-321);
+  /// let middle: Among<(), i64, ()> = Middle(-321);
   /// assert_eq!(middle.middle(), Some(-321));
   /// ```
   pub fn middle(self) -> Option<M> {
@@ -281,7 +226,7 @@ impl<L, M, R> Among<L, M, R> {
   /// let left: Among<_, i64, ()> = Left("some value");
   /// assert_eq!(left.right(),  None);
   ///
-  /// let middle: Among<(), i64, _> = Middle(-321);
+  /// let middle: Among<(), i64, ()> = Middle(-321);
   /// assert_eq!(middle.right(), None);
   ///
   /// let right: Among<(), i64, _> = Right(321);
@@ -305,7 +250,7 @@ impl<L, M, R> Among<L, M, R> {
   /// let right: Among<(), i64, _> = Right("some value");
   /// assert_eq!(right.as_ref(), Right(&"some value"));
   ///
-  /// let middle: Among<(), i64, _> = Middle(-321);
+  /// let middle: Among<(), _, ()> = Middle(-321);
   /// assert_eq!(middle.as_ref(), Middle(&-321));
   /// ```
   pub fn as_ref(&self) -> Among<&L, &M, &R> {
@@ -408,7 +353,7 @@ impl<L, M, R> Among<L, M, R> {
   /// let right: Among<u32, u32,  _> = Right(123);
   /// assert_eq!(right.map_left(|x| x * 2), Right(123));
   ///
-  /// let middle: Among<u32, u32, _> = Middle(123);
+  /// let middle: Among<u32, _, u32> = Middle(123);
   /// assert_eq!(middle.map_left(|x| x * 3), Middle(123));
   /// ```
   pub fn map_left<F, N>(self, f: F) -> Among<N, M, R>
@@ -429,13 +374,13 @@ impl<L, M, R> Among<L, M, R> {
   /// use among::*;
   ///
   /// let left: Among<_, u32, u32> = Left(123);
-  /// assert_eq!(left.map_left(|x| x * 2), Left(123));
+  /// assert_eq!(left.map_middle(|x| x * 2), Left(123));
   ///
   /// let right: Among<u32, u32,  _> = Right(123);
-  /// assert_eq!(right.map_left(|x| x * 2), Right(123));
+  /// assert_eq!(right.map_middle(|x| x * 2), Right(123));
   ///
-  /// let middle: Among<u32, u32, _> = Middle(123);
-  /// assert_eq!(middle.map_left(|x| x * 3), Middle(369));
+  /// let middle: Among<u32, _, u32> = Middle(123);
+  /// assert_eq!(middle.map_middle(|x| x * 3), Middle(369));
   /// ```
   pub fn map_middle<F, N>(self, f: F) -> Among<L, N, R>
   where
@@ -460,7 +405,7 @@ impl<L, M, R> Among<L, M, R> {
   /// let right: Among<u32, u32, _> = Right(123);
   /// assert_eq!(right.map_right(|x| x * 2), Right(246));
   ///
-  /// let middle: Among<u32, u32, _> = Middle(123);
+  /// let middle: Among<u32, _, u32> = Middle(123);
   /// assert_eq!(middle.map_right(|x| x * 3), Middle(123));
   /// ```
   pub fn map_right<F, S>(self, f: F) -> Among<L, M, S>
@@ -483,14 +428,14 @@ impl<L, M, R> Among<L, M, R> {
   /// use among::*;
   ///
   /// let f = |s: String| s.len();
-  /// let g = |t: u8| u.to_string();
-  /// let h = |u: | u * 2;
+  /// let h = |t: u8| t.to_string();
+  /// let g = |u: usize| u * 2;
   ///
-  /// let left: Among<String, u8> = Left("loopy".into());
-  /// assert_eq!(left.map_among(f, g), Left(5));
+  /// let left: Among<String, usize, u8> = Left("loopy".into());
+  /// assert_eq!(left.map_among(f, g, h), Left(5));
   ///
-  /// let right: Among<String, u8> = Right(42);
-  /// assert_eq!(right.map_among(f, g), Right("42".into()));
+  /// let right: Among<String, usize, u8> = Right(42);
+  /// assert_eq!(right.map_among(f, g, h), Right("42".into()));
   /// ```
   pub fn map_among<F, G, H, S, T, U>(self, f: F, g: G, h: H) -> Among<S, T, U>
   where
@@ -515,7 +460,7 @@ impl<L, M, R> Among<L, M, R> {
   ///
   /// // Both closures want to update the same value, so pass it as context.
   /// let mut f = |sum: &mut usize, s: String| { *sum += s.len(); s.to_uppercase() };
-  /// let mut g = |sum: &mut usize, i: i32| { *sum += u; u.to_string() };
+  /// let mut g = |sum: &mut usize, i: i32| { *sum += i as usize; i.to_string() };
   /// let mut h = |sum: &mut usize, u: usize| { *sum += u; u.to_string() };
   ///
   /// let left: Among<String, i32, usize> = Left("loopy".into());
@@ -542,25 +487,25 @@ impl<L, M, R> Among<L, M, R> {
     }
   }
 
-  /// Apply one of two functions depending on contents, unifying their result. If the value is
-  /// `Left(L)` then the first function `f` is applied; if it is `Right(R)` then the second
-  /// function `g` is applied.
+  /// Apply one of three functions depending on contents, unifying their result. If the value is
+  /// `Left(L)` then the first function `f` is applied; if it is `Middle(M)` then the second function `g` is applied;
+  /// if it is `Right(R)` then the third function `h` is applied.
   ///
   /// ```
   /// use among::*;
   ///
   /// fn square(n: u32) -> i32 { (n * n) as i32 }
   /// fn negate(n: i32) -> i32 { -n }
-  /// fn cube(n: i64) -> i32 { (n * n * n) as i32 }
+  /// fn cube(n: u64) -> i32 { (n * n * n) as i32 }
   ///
-  /// let left: Among<u32, i32> = Left(4);
-  /// assert_eq!(left.among(square, negate), 16);
+  /// let left: Among<u32, u64, i32> = Left(4);
+  /// assert_eq!(left.among(square, cube, negate), 16);
   ///
-  /// let right: Among<u32, i32> = Right(-4);
-  /// assert_eq!(right.among(square, negate), 4);
+  /// let right: Among<u32, u64, i32> = Right(-4);
+  /// assert_eq!(right.among(square, cube, negate), 4);
   ///
-  /// let middle: Among<i64, i32> = Middle(3);
-  /// assert_eq!(middle.among(cube, negate), 27);
+  /// let middle: Among<u32, u64, i32> = Middle(3);
+  /// assert_eq!(middle.among(square, cube, negate), 27);
   /// ```
   pub fn among<F, G, H, T>(self, f: F, g: G, h: H) -> T
   where
@@ -584,15 +529,16 @@ impl<L, M, R> Among<L, M, R> {
   ///
   /// let mut result = Vec::new();
   ///
-  /// let values = vec![Left(2), Right(2.7)];
+  /// let values = vec![Left(2), Middle(-3), Right(2.7)];
   ///
   /// for value in values {
   ///     value.among_with(&mut result,
   ///                       |ctx, integer| ctx.push(integer),
+  ///                       |ctx, neg| ctx.push(neg),
   ///                       |ctx, real| ctx.push(f64::round(real) as i32));
   /// }
   ///
-  /// assert_eq!(result, vec![2, 3]);
+  /// assert_eq!(result, vec![2, -3, 3]);
   /// ```
   pub fn among_with<Ctx, F, G, H, T>(self, ctx: Ctx, f: F, g: G, h: H) -> T
   where
@@ -612,11 +558,11 @@ impl<L, M, R> Among<L, M, R> {
   /// ```
   /// use among::*;
   ///
-  /// let left: Among<_, u32> = Left(123);
-  /// assert_eq!(left.left_and_then::<_,()>(|x| Right(x * 2)), Right(246));
+  /// let left: Among<_, u32, u32> = Left(123);
+  /// assert_eq!(left.left_and_then::<_, ()>(|x| Right(x * 2)), Right(246));
   ///
-  /// let right: Among<u32, _> = Right(123);
-  /// assert_eq!(right.left_and_then(|x| Right::<(), _>(x * 2)), Right(123));
+  /// let right: Among<u32, u32, _> = Right(123);
+  /// assert_eq!(right.left_and_then(|x| Right::<(), _, _>(x * 2)), Right(123));
   /// ```
   pub fn left_and_then<F, S>(self, f: F) -> Among<S, M, R>
   where
@@ -629,18 +575,40 @@ impl<L, M, R> Among<L, M, R> {
     }
   }
 
+  /// Apply the function `f` on the value in the `Middle` variant if it is present.
+  ///
+  /// ```
+  /// use among::*;
+  ///
+  /// let middle: Among<u32, _, u32> = Middle(123);
+  /// assert_eq!(middle.middle_and_then::<_, ()>(|x| Right(x * 2)), Right(246));
+  ///
+  /// let right: Among<u32, u32, _> = Right(123);
+  /// assert_eq!(right.middle_and_then(|x| Right::<_, (), _>(x * 2)), Right(123));
+  /// ```
+  pub fn middle_and_then<F, S>(self, f: F) -> Among<L, S, R>
+  where
+    F: FnOnce(M) -> Among<L, S, R>,
+  {
+    match self {
+      Left(l) => Left(l),
+      Middle(m) => f(m),
+      Right(r) => Right(r),
+    }
+  }
+
   /// Apply the function `f` on the value in the `Right` variant if it is present.
   ///
   /// ```
   /// use among::*;
   ///
-  /// let left: Among<_, u32> = Left(123);
+  /// let left: Among<_, u32, u32> = Left(123);
   /// assert_eq!(left.right_and_then(|x| Right(x * 2)), Left(123));
   ///
-  /// let right: Among<u32, _> = Right(123);
+  /// let right: Among<u32, u32, _> = Right(123);
   /// assert_eq!(right.right_and_then(|x| Right(x * 2)), Right(246));
   /// ```
-  pub fn right_and_then<F, G, S>(self, f: F) -> Among<L, M, S>
+  pub fn right_and_then<F, S>(self, f: F) -> Among<L, M, S>
   where
     F: FnOnce(R) -> Among<L, M, S>,
   {
@@ -653,14 +621,14 @@ impl<L, M, R> Among<L, M, R> {
 
   /// Convert the inner value to an iterator.
   ///
-  /// This requires the `Left` and `Right` iterators to have the same item type.
+  /// This requires the `Left`, `Middle` and `Right` iterators to have the same item type.
   /// See [`factor_into_iter`][Among::factor_into_iter] to iterate different types.
   ///
   /// ```
   /// use among::*;
   ///
-  /// let left: Among<_, Vec<u32>> = Left(vec![1, 2, 3, 4, 5]);
-  /// let mut right: Among<Vec<u32>, _> = Right(vec![]);
+  /// let left: Among<Vec<u32>, Vec<u32>, Vec<u32>> = Left(vec![1, 2, 3, 4, 5]);
+  /// let mut right: Among<Vec<u32>, Vec<u32>, Vec<u32>> = Right(vec![]);
   /// right.extend(left.into_iter());
   /// assert_eq!(right, Right(vec![1, 2, 3, 4, 5]));
   /// ```
@@ -676,14 +644,14 @@ impl<L, M, R> Among<L, M, R> {
 
   /// Borrow the inner value as an iterator.
   ///
-  /// This requires the `Left` and `Right` iterators to have the same item type.
+  /// This requires the `Left`, `Middle` and `Right` iterators to have the same item type.
   /// See [`factor_iter`][Among::factor_iter] to iterate different types.
   ///
   /// ```
   /// use among::*;
   ///
-  /// let left: Among<_, &[u32]> = Left(vec![2, 3]);
-  /// let mut right: Among<Vec<u32>, _> = Right(&[4, 5][..]);
+  /// let left: Among<_, &[u32], &[u32]> = Left(vec![2, 3]);
+  /// let mut right: Among<Vec<u32>, &[u32], _> = Right(&[4, 5][..]);
   /// let mut all = vec![1];
   /// all.extend(left.iter());
   /// all.extend(right.iter());
@@ -706,24 +674,31 @@ impl<L, M, R> Among<L, M, R> {
 
   /// Mutably borrow the inner value as an iterator.
   ///
-  /// This requires the `Left` and `Right` iterators to have the same item type.
+  /// This requires the `Left`, `Middle` and `Right` iterators to have the same item type.
   /// See [`factor_iter_mut`][Among::factor_iter_mut] to iterate different types.
   ///
   /// ```
   /// use among::*;
   ///
-  /// let mut left: Among<_, &mut [u32]> = Left(vec![2, 3]);
+  /// let mut left: Among<_, Vec<u32>, &mut [u32]> = Left(vec![2, 3]);
   /// for l in left.iter_mut() {
   ///     *l *= *l
   /// }
   /// assert_eq!(left, Left(vec![4, 9]));
   ///
   /// let mut inner = [4, 5];
-  /// let mut right: Among<Vec<u32>, _> = Right(&mut inner[..]);
+  /// let mut right: Among<Vec<u32>, Vec<u32>, _> = Right(&mut inner[..]);
   /// for r in right.iter_mut() {
   ///     *r *= *r
   /// }
   /// assert_eq!(inner, [16, 25]);
+  ///
+  /// let mut inner = [6, 7];
+  /// let mut middle: Among<Vec<u32>, _, Vec<u32>> = Middle(&mut inner[..]);
+  /// for r in middle.iter_mut() {
+  ///     *r *= *r
+  /// }
+  /// assert_eq!(inner, [36, 49]);
   /// ```
   pub fn iter_mut(
     &mut self,
@@ -747,10 +722,10 @@ impl<L, M, R> Among<L, M, R> {
   ///
   /// ```
   /// use among::*;
-  /// let left: Among<_, Vec<u8>> = Left(&["hello"]);
+  /// let left: Among<_, Box<[u8]>, Vec<u8>> = Left(&["hello"]);
   /// assert_eq!(left.factor_into_iter().next(), Some(Left(&"hello")));
 
-  /// let right: Among<&[&str], _> = Right(vec![0, 1]);
+  /// let right: Among<&[&str], Box<[u8]>, _> = Right(vec![0, 1]);
   /// assert_eq!(right.factor_into_iter().collect::<Vec<_>>(), vec![Right(0), Right(1)]);
   ///
   /// ```
@@ -768,14 +743,14 @@ impl<L, M, R> Among<L, M, R> {
   /// Borrows an `Among` of `Iterator`s to be an `Iterator` of `Among`s
   ///
   /// Unlike [`iter`][Among::iter], this does not require the
-  /// `Left` and `Right` iterators to have the same item type.
+  /// `Left`, `Middle` and `Right` iterators to have the same item type.
   ///
   /// ```
   /// use among::*;
-  /// let left: Among<_, Vec<u8>> = Left(["hello"]);
+  /// let left: Among<_, Box<[u8]>, Vec<u8>> = Left(["hello"]);
   /// assert_eq!(left.factor_iter().next(), Some(Left(&"hello")));
 
-  /// let right: Among<[&str; 2], _> = Right(vec![0, 1]);
+  /// let right: Among<[&str; 2], Box<[u8]>, _> = Right(vec![0, 1]);
   /// assert_eq!(right.factor_iter().collect::<Vec<_>>(), vec![Right(&0), Right(&1)]);
   ///
   /// ```
@@ -797,15 +772,15 @@ impl<L, M, R> Among<L, M, R> {
   /// Mutably borrows an `Among` of `Iterator`s to be an `Iterator` of `Among`s
   ///
   /// Unlike [`iter_mut`][Among::iter_mut], this does not require the
-  /// `Left` and `Right` iterators to have the same item type.
+  /// `Left`, `Middle` and `Right` iterators to have the same item type.
   ///
   /// ```
   /// use among::*;
-  /// let mut left: Among<_, Vec<u8>> = Left(["hello"]);
+  /// let mut left: Among<_, Box<[u8]>, Vec<u8>> = Left(["hello"]);
   /// left.factor_iter_mut().for_each(|x| *x.unwrap_left() = "goodbye");
   /// assert_eq!(left, Left(["goodbye"]));
 
-  /// let mut right: Among<[&str; 2], _> = Right(vec![0, 1, 2]);
+  /// let mut right: Among<[&str; 2], Box<[u8]>, _> = Right(vec![0, 1, 2]);
   /// right.factor_iter_mut().for_each(|x| if let Right(r) = x { *r = -*r; });
   /// assert_eq!(right, Right(vec![0, -1, -2]));
   ///
@@ -858,13 +833,13 @@ impl<L, M, R> Among<L, M, R> {
   ///
   /// ```
   /// # use among::*;
-  /// let left: Among<String, u32> = Left("left".to_string());
+  /// let left: Among<String, i32, u32> = Left("left".to_string());
   /// assert_eq!(left.left_or_default(), "left");
   ///
-  /// let right: Among<String, u32> = Right(42);
+  /// let right: Among<String, i32, u32> = Right(42);
   /// assert_eq!(right.left_or_default(), String::default());
   ///
-  /// let middle: Among<String, u32> = Middle(42);
+  /// let middle: Among<String, i32, u32> = Middle(-42);
   /// assert_eq!(middle.left_or_default(), String::default());
   /// ```
   pub fn left_or_default(self) -> L
@@ -884,14 +859,14 @@ impl<L, M, R> Among<L, M, R> {
   ///
   /// ```
   /// # use among::*;
-  /// let left: Among<String, u32> = Left("3".to_string());
-  /// assert_eq!(left.left_or_else(|_| unreachable!()), "3");
+  /// let left: Among<String, i32, u32> = Left("3".to_string());
+  /// assert_eq!(left.left_or_else(|_| unreachable!(), |_| unreachable!()), "3");
   ///
-  /// let right: Among<String, u32> = Right(3);
-  /// assert_eq!(right.left_or_else(|x| x.to_string()), "3");
+  /// let right: Among<String, i32, u32> = Right(3);
+  /// assert_eq!(right.left_or_else(|x| x.to_string(), |x| x.to_string()), "3");
   ///
-  /// let middle: Among<String, u32> = Middle(3);
-  /// assert_eq!(middle.left_or_else(|_| unreachable!()), "3");
+  /// let middle: Among<String, i32, u32> = Middle(3);
+  /// assert_eq!(middle.left_or_else(|x| x.to_string(), |x| x.to_string()), "3");
   /// ```
   pub fn left_or_else<F, G>(self, f: F, g: G) -> L
   where
@@ -916,13 +891,13 @@ impl<L, M, R> Among<L, M, R> {
   /// ```
   /// # use among::*;
   /// let right: Among<&str, &str, &str> = Right("right");
-  /// assert_eq!(right.middle_or("foo"), "middle");
+  /// assert_eq!(right.middle_or("middle"), "middle");
   ///
   /// let left: Among<&str, &str, &str> = Left("left");
-  /// assert_eq!(left.middle_or("bar"), "middle");
+  /// assert_eq!(left.middle_or("middle"), "middle");
   ///
   /// let middle: Among<&str, &str, &str> = Middle("middle");
-  /// assert_eq!(middle.middle_or("middle"), "middle");
+  /// assert_eq!(middle.middle_or("foo"), "middle");
   /// ```
   pub fn middle_or(self, other: M) -> M {
     match self {
@@ -938,10 +913,10 @@ impl<L, M, R> Among<L, M, R> {
   /// ```
   /// # use among::*;
   /// let left: Among<String, i32, u32> = Left("left".to_string());
-  /// assert_eq!(left.middle_or_default(), u32::default());
+  /// assert_eq!(left.middle_or_default(), i32::default());
   ///
   /// let right: Among<String, i32, u32> = Right(42);
-  /// assert_eq!(right.middle_or_default(), u32::default());
+  /// assert_eq!(right.middle_or_default(), i32::default());
   ///
   /// let middle: Among<String, i32, u32> = Middle(-42);
   /// assert_eq!(middle.middle_or_default(), -42);
@@ -963,13 +938,13 @@ impl<L, M, R> Among<L, M, R> {
   /// ```
   /// # use among::*;
   /// let left: Among<String, i32, String> = Left("3".to_string());
-  /// assert_eq!(left.middle_or_else(|x| x.parse().unwrap()), 3);
+  /// assert_eq!(left.middle_or_else(|x| x.parse().unwrap(), |x| x.parse().unwrap()), 3);
   ///
   /// let right: Among<String, i32, String> = Right("3".to_string());
-  /// assert_eq!(right.middle_or_else(|x| x.parse().unwrap()), 3);
+  /// assert_eq!(right.middle_or_else(|x| x.parse().unwrap(), |x| x.parse().unwrap()), 3);
   ///
   /// let middle: Among<String, i32, String> = Middle(-3);
-  /// assert_eq!(middle.middle_or_else(|_| unreachable!()), -3);
+  /// assert_eq!(middle.middle_or_else(|_| unreachable!(), |_| unreachable!()), -3);
   /// ```
   pub fn middle_or_else<F, G>(self, f: F, g: G) -> M
   where
@@ -1000,7 +975,7 @@ impl<L, M, R> Among<L, M, R> {
   /// assert_eq!(left.right_or("right"), "right");
   ///
   /// let middle: Among<&str, &str, &str> = Middle("middle");
-  /// assert_eq!(middle.right_or("bar"), "right");
+  /// assert_eq!(middle.right_or("right"), "right");
   /// ```
   pub fn right_or(self, other: R) -> R {
     match self {
@@ -1042,14 +1017,14 @@ impl<L, M, R> Among<L, M, R> {
   ///
   /// ```
   /// # use among::*;
-  /// let left: Among<String, i32, u32> = Left("3".to_string());
-  /// assert_eq!(left.right_or_else(|x| x.parse().unwrap()), 3);
+  /// let left: Among<String, &str, u32> = Left("3".to_string());
+  /// assert_eq!(left.right_or_else(|x| x.parse().unwrap(), |x| x.parse().unwrap()), 3);
   ///
-  /// let right: Among<String, i32, u32> = Right(3);
-  /// assert_eq!(right.right_or_else(|_| unreachable!()), 3);
+  /// let right: Among<String, &str, u32> = Right(3);
+  /// assert_eq!(right.right_or_else(|_| unreachable!(), |_| unreachable!()), 3);
   ///
-  /// let middle: Among<String, i32, u32> = Middle("-3".to_string());
-  /// assert_eq!(middle.right_or_else(|x| x.parse().unwrap()), -3);
+  /// let middle: Among<String, &str, u32> = Middle("3");
+  /// assert_eq!(middle.right_or_else(|x| x.parse().unwrap(), |x| x.parse().unwrap()), 3);
   /// ```
   pub fn right_or_else<F, G>(self, f: F, g: G) -> R
   where
@@ -1069,7 +1044,7 @@ impl<L, M, R> Among<L, M, R> {
   ///
   /// ```
   /// # use among::*;
-  /// let left: Among<_, ()> = Left(3);
+  /// let left: Among<_, (), ()> = Left(3);
   /// assert_eq!(left.unwrap_left(), 3);
   /// ```
   ///
@@ -1113,7 +1088,7 @@ impl<L, M, R> Among<L, M, R> {
   ///
   /// ```
   /// # use among::*;
-  /// let right: Among<(), _> = Right(3);
+  /// let right: Among<(), (), _> = Right(3);
   /// assert_eq!(right.unwrap_right(), 3);
   /// ```
   ///
@@ -1123,13 +1098,13 @@ impl<L, M, R> Among<L, M, R> {
   ///
   /// ```should_panic
   /// # use among::*;
-  /// let left: Among<_, ()> = Left(3);
+  /// let left: Among<_, (), ()> = Left(3);
   /// left.unwrap_right();
   /// ```
   ///
   /// ```should_panic
   /// # use among::*;
-  /// let middle: Among<_, _, ()> = Middle(3);
+  /// let middle: Among<(), _, ()> = Middle(3);
   /// middle.unwrap_right();
   /// ```
   pub fn unwrap_right(self) -> R
@@ -1153,8 +1128,8 @@ impl<L, M, R> Among<L, M, R> {
   ///
   /// ```
   /// # use among::*;
-  /// let left: Among<_, ()> = Left(3);
-  /// assert_eq!(left.expect_left("value was Right"), 3);
+  /// let left: Among<_, (), ()> = Left(3);
+  /// assert_eq!(left.expect_left("value was not Left"), 3);
   /// ```
   ///
   /// # Panics
@@ -1163,8 +1138,16 @@ impl<L, M, R> Among<L, M, R> {
   ///
   /// ```should_panic
   /// # use among::*;
-  /// let right: Among<(), _> = Right(3);
-  /// right.expect_left("value was Right");
+  /// let right: Among<(), (), _> = Right(3);
+  /// right.expect_left("value was not Left");
+  /// ```
+  ///
+  /// When `Among` is a `Middle` value
+  ///
+  /// ```should_panic
+  /// # use among::*;
+  /// let middle: Among<(), _, ()> = Middle(3);
+  /// middle.expect_left("value was not Left");
   /// ```
   pub fn expect_left(self, msg: &str) -> L
   where
@@ -1195,7 +1178,7 @@ impl<L, M, R> Among<L, M, R> {
   /// ```should_panic
   /// # use among::*;
   /// let right: Among<(), (), _> = Right(3);
-  /// right.expect_middle("value was Right");
+  /// right.expect_middle("value was not Middle");
   /// ```
   ///
   /// When `Among` is a `Left` value
@@ -1203,7 +1186,7 @@ impl<L, M, R> Among<L, M, R> {
   /// ```should_panic
   /// # use among::*;
   /// let left: Among<_, (), ()> = Left(3);
-  /// left.expect_middle("value was Left");
+  /// left.expect_middle("value was not Middle");
   /// ```
   pub fn expect_middle(self, msg: &str) -> M
   where
@@ -1223,8 +1206,8 @@ impl<L, M, R> Among<L, M, R> {
   ///
   /// ```
   /// # use among::*;
-  /// let right: Among<(), _> = Right(3);
-  /// assert_eq!(right.expect_right("value was Left"), 3);
+  /// let right: Among<(), (), _> = Right(3);
+  /// assert_eq!(right.expect_right("value was not Right"), 3);
   /// ```
   ///
   /// # Panics
@@ -1234,7 +1217,7 @@ impl<L, M, R> Among<L, M, R> {
   /// ```should_panic
   /// # use among::*;
   /// let left: Among<_, (), ()> = Left(3);
-  /// left.expect_right("value was Right");
+  /// left.expect_right("value was not Right");
   /// ```
   ///
   /// When `Among` is a `Middle` value
@@ -1242,7 +1225,7 @@ impl<L, M, R> Among<L, M, R> {
   /// ```should_panic
   /// # use among::*;
   /// let middle: Among<(), _, ()> = Middle(3);
-  /// middle.expect_right("value was Middle");
+  /// middle.expect_right("value was not Right");
   /// ```
   pub fn expect_right(self, msg: &str) -> R
   where
@@ -1267,7 +1250,7 @@ impl<L, M, R> Among<L, M, R> {
   /// assert_eq!(left.among_into::<u64>(), 3u64);
   /// let middle: Among<u16, u32, u64> = Middle(3u32);
   /// assert_eq!(middle.among_into::<u64>(), 3u64);
-  /// let right: Among<u16, u32, u64> = Right(7u32);
+  /// let right: Among<u16, u32, u64> = Right(7u64);
   /// assert_eq!(right.among_into::<u64>(), 7u64);
   /// ```
   pub fn among_into<T>(self) -> T
@@ -1289,11 +1272,14 @@ impl<L, M, R> Among<Option<L>, Option<M>, Option<R>> {
   ///
   /// ```
   /// use among::*;
-  /// let left: Among<_, Option<String>> = Left(Some(vec![0]));
+  /// let left: Among<_, Option<u32>, Option<String>> = Left(Some(vec![0]));
   /// assert_eq!(left.factor_none(), Some(Left(vec![0])));
   ///
-  /// let right: Among<Option<Vec<u8>>, _> = Right(Some(String::new()));
+  /// let right: Among<Option<Vec<u8>>, Option<u32>, _> = Right(Some(String::new()));
   /// assert_eq!(right.factor_none(), Some(Right(String::new())));
+  ///
+  /// let middle: Among<Option<Vec<u8>>, _, Option<String>> = Middle(Some(123));
+  /// assert_eq!(middle.factor_none(), Some(Middle(123)));
   /// ```
   // TODO(MSRV): doc(alias) was stabilized in Rust 1.48
   // #[doc(alias = "transpose")]
@@ -1313,11 +1299,14 @@ impl<L, M, R, E> Among<Result<L, E>, Result<M, E>, Result<R, E>> {
   ///
   /// ```
   /// use among::*;
-  /// let left: Among<_, Result<String, u32>> = Left(Ok(vec![0]));
+  /// let left: Among<_, Result<u32, u32>, Result<String, u32>> = Left(Ok(vec![0]));
   /// assert_eq!(left.factor_err(), Ok(Left(vec![0])));
   ///
-  /// let right: Among<Result<Vec<u8>, u32>, _> = Right(Ok(String::new()));
+  /// let right: Among<Result<Vec<u8>, u32>, Result<u32, u32>, _> = Right(Ok(String::new()));
   /// assert_eq!(right.factor_err(), Ok(Right(String::new())));
+  ///
+  /// let middle: Among<Result<Vec<u8>, u32>, _, Result<String, u32>> = Middle(Ok(123));
+  /// assert_eq!(middle.factor_err(), Ok(Middle(123)));
   /// ```
   // TODO(MSRV): doc(alias) was stabilized in Rust 1.48
   // #[doc(alias = "transpose")]
@@ -1337,11 +1326,14 @@ impl<T, L, M, R> Among<Result<T, L>, Result<T, M>, Result<T, R>> {
   ///
   /// ```
   /// use among::*;
-  /// let left: Among<_, Result<u32, String>> = Left(Err(vec![0]));
+  /// let left: Among<_, Result<u32, i64>, Result<u32, String>> = Left(Err(vec![0]));
   /// assert_eq!(left.factor_ok(), Err(Left(vec![0])));
   ///
-  /// let right: Among<Result<u32, Vec<u8>>, _> = Right(Err(String::new()));
+  /// let right: Among<Result<u32, Vec<u8>>, Result<u32, i64>, _> = Right(Err(String::new()));
   /// assert_eq!(right.factor_ok(), Err(Right(String::new())));
+  ///
+  /// let middle: Among<Result<u32, Vec<u8>>, _, Result<u32, String>> = Middle(Err(-123));
+  /// assert_eq!(middle.factor_ok(), Err(Middle(-123)));
   /// ```
   // TODO(MSRV): doc(alias) was stabilized in Rust 1.48
   // #[doc(alias = "transpose")]
@@ -1361,11 +1353,14 @@ impl<T, L, M, R> Among<(T, L), (T, M), (T, R)> {
   ///
   /// ```
   /// use among::*;
-  /// let left: Among<_, (u32, String)> = Left((123, vec![0]));
+  /// let left: Among<_, (u32, i64), (u32, String)> = Left((123, vec![0]));
   /// assert_eq!(left.factor_first().0, 123);
   ///
-  /// let right: Among<(u32, Vec<u8>), _> = Right((123, String::new()));
+  /// let right: Among<(u32, Vec<u8>), (u32, i64), _> = Right((123, String::new()));
   /// assert_eq!(right.factor_first().0, 123);
+  ///
+  /// let middle: Among<(u32, Vec<u8>), _, (u32, String)> = Middle((123, vec![0]));
+  /// assert_eq!(middle.factor_first().0, 123);
   /// ```
   pub fn factor_first(self) -> (T, Among<L, M, R>) {
     match self {
@@ -1383,11 +1378,14 @@ impl<T, L, M, R> Among<(L, T), (M, T), (R, T)> {
   ///
   /// ```
   /// use among::*;
-  /// let left: Among<_, (String, u32)> = Left((vec![0], 123));
+  /// let left: Among<_, (i64, u32), (String, u32)> = Left((vec![0], 123));
   /// assert_eq!(left.factor_second().1, 123);
   ///
-  /// let right: Among<(Vec<u8>, u32), _> = Right((String::new(), 123));
+  /// let right: Among<(Vec<u8>, u32), (i64, u32), _> = Right((String::new(), 123));
   /// assert_eq!(right.factor_second().1, 123);
+  ///
+  /// let middle: Among<(Vec<u8>, u32), _, (String, u32)> = Middle((-1, 123));
+  /// assert_eq!(middle.factor_second().1, 123);
   /// ```
   pub fn factor_second(self) -> (Among<L, M, R>, T) {
     match self {
@@ -1404,11 +1402,14 @@ impl<T> Among<T, T, T> {
   /// ```
   /// use among::*;
   ///
-  /// let left: Among<_, u32> = Left(123);
+  /// let left: Among<_, _, u32> = Left(123);
   /// assert_eq!(left.into_inner(), 123);
   ///
-  /// let right: Among<u32, _> = Right(123);
+  /// let right: Among<u32, _, _> = Right(123);
   /// assert_eq!(right.into_inner(), 123);
+  ///
+  /// let middle: Among<_, u32, _> = Middle(123);
+  /// assert_eq!(middle.into_inner(), 123);
   /// ```
   pub fn into_inner(self) -> T {
     for_all!(self, inner => inner)
@@ -1420,7 +1421,7 @@ impl<T> Among<T, T, T> {
   /// ```
   /// use among::*;
   ///
-  /// let value: Among<_, i32> = Right(42);
+  /// let value: Among<_, _, i32> = Right(42);
   ///
   /// let other = value.map(|x| x * 2);
   /// assert_eq!(other, Right(84));
@@ -1438,7 +1439,7 @@ impl<T> Among<T, T, T> {
 }
 
 impl<L, M, R> Among<&L, &M, &R> {
-  /// Maps an `Among<&L, &R>` to an `Among<L, M, R>` by cloning the contents of
+  /// Maps an `Among<&L, &M, &R>` to an `Among<L, M, R>` by cloning the contents of
   /// among branch.
   pub fn cloned(self) -> Among<L, M, R>
   where
@@ -1453,7 +1454,7 @@ impl<L, M, R> Among<&L, &M, &R> {
     }
   }
 
-  /// Maps an `Among<&L, &R>` to an `Among<L, M, R>` by copying the contents of
+  /// Maps an `Among<&L, &M, &R>` to an `Among<L, M, R>` by copying the contents of
   /// among branch.
   pub fn copied(self) -> Among<L, M, R>
   where
@@ -1470,7 +1471,7 @@ impl<L, M, R> Among<&L, &M, &R> {
 }
 
 impl<L, M, R> Among<&mut L, &mut M, &mut R> {
-  /// Maps an `Among<&mut L, &mut R>` to an `Among<L, M, R>` by cloning the contents of
+  /// Maps an `Among<&mut L, &mut M, &mut R>` to an `Among<L, M, R>` by cloning the contents of
   /// among branch.
   pub fn cloned(self) -> Among<L, M, R>
   where
@@ -1485,7 +1486,7 @@ impl<L, M, R> Among<&mut L, &mut M, &mut R> {
     }
   }
 
-  /// Maps an `Among<&mut L, &mut R>` to an `Among<L, M, R>` by copying the contents of
+  /// Maps an `Among<&mut L, &mut M, &mut R>` to an `Among<L, M, R>` by copying the contents of
   /// among branch.
   pub fn copied(self) -> Among<L, M, R>
   where
@@ -1501,20 +1502,24 @@ impl<L, M, R> Among<&mut L, &mut M, &mut R> {
   }
 }
 
-/// `Among<L, M, R>` is a future if both `L` and `R` are futures.
+/// `Among<L, M, R>` is a future if both `L`, `M` and `R` are futures.
 impl<L, M, R> Future for Among<L, M, R>
 where
   L: Future,
-  M: Future<Output = L::Output>,
-  R: Future<Output = L::Output>,
+  M: Future,
+  R: Future,
 {
-  type Output = L::Output;
+  type Output = Among<L::Output, M::Output, R::Output>;
 
   fn poll(
     self: Pin<&mut Self>,
     cx: &mut core::task::Context<'_>,
   ) -> core::task::Poll<Self::Output> {
-    for_all!(self.as_pin_mut(), inner => inner.poll(cx))
+    match self.as_pin_mut() {
+      Left(l) => l.poll(cx).map(Left),
+      Middle(m) => m.poll(cx).map(Middle),
+      Right(r) => r.poll(cx).map(Right),
+    }
   }
 }
 
@@ -1586,7 +1591,7 @@ where
 }
 
 #[cfg(any(test, feature = "std"))]
-/// `Among<L, M, R>` implements `Write` if both `L` and `R` do.
+/// `Among<L, M, R>` implements `Write` if all of `L`, `M` and `R` do.
 ///
 /// Requires crate feature `"std"`
 impl<L, M, R> Write for Among<L, M, R>
@@ -1720,7 +1725,7 @@ where
 }
 
 #[cfg(any(test, feature = "std"))]
-/// `Among` implements `Error` if *both* `L` and `R` implement it.
+/// `Among` implements `Error` if *all* of `L`, `M` and `R` implement it.
 ///
 /// Requires crate feature `"std"`
 impl<L, M, R> Error for Among<L, M, R>
@@ -1778,28 +1783,12 @@ fn basic() {
 }
 
 #[test]
-fn macros() {
-  use std::{borrow::Cow, string::String};
-
-  fn a() -> Among<u32, u32, u32> {
-    let x: u32 = try_left!(Right(1337u32));
-    Left(x * 2)
-  }
-  assert_eq!(a(), Right(1337));
-
-  fn b() -> Among<String, Cow<'static, str>, &'static str> {
-    Right(try_right!(Left("foo bar")))
-  }
-  assert_eq!(b(), Left(String::from("foo bar")));
-}
-
-#[test]
 fn deref() {
   use std::{borrow::Cow, string::String};
 
   fn is_str(_: &str) {}
   let value: Among<String, Cow<'_, str>, &str> = Left(String::from("test"));
-  is_str(&*value);
+  is_str(&value);
 }
 
 #[test]
@@ -1819,21 +1808,21 @@ fn iter() {
 fn seek() {
   use std::{io, vec};
 
-  let use_empty = 0;
+  let use_empty = 1;
   let mut mockdata = [0x00; 256];
   let mut mockvec = vec![];
-  for i in 0..256 {
-    mockdata[i] = i as u8;
+  for (i, elem) in mockdata.iter_mut().enumerate() {
     mockvec.push(i as u8);
+    *elem = i as u8;
   }
 
   let mut reader = if use_empty == 0 {
     // Empty didn't impl Seek until Rust 1.51
     Left(io::Cursor::new([]))
   } else if use_empty == 1 {
-    Middle(io::Cursor::new(&mockvec[..]))
-  } else {
     Right(io::Cursor::new(&mockdata[..]))
+  } else {
+    Middle(io::Cursor::new(&mockvec[..]))
   };
 
   let mut buf = [0u8; 16];
@@ -1854,16 +1843,16 @@ fn seek() {
 fn read_write() {
   use std::{io, vec};
 
-  let io = 0;
+  let io = 1;
   let mockdata = [0xff; 256];
   let mut mockvec = io::Cursor::new(vec![]);
 
   let mut reader = if io == 0 {
     Left(io::stdin())
   } else if io == 1 {
-    Middle(&mut mockvec)
-  } else {
     Right(&mockdata[..])
+  } else {
+    Middle(&mut mockvec)
   };
 
   let mut buf = [0u8; 16];
@@ -1874,9 +1863,9 @@ fn read_write() {
   let mut writer = if io == 0 {
     Left(io::stdout())
   } else if io == 1 {
-    Middle(&mut mockvec)
-  } else {
     Right(&mut mockbuf[..])
+  } else {
+    Middle(&mut mockvec)
   };
 
   let buf = [1u8; 16];
