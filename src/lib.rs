@@ -35,8 +35,8 @@ use std::io::{self, BufRead, Read, Seek, SeekFrom, Write};
 
 pub use crate::Among::{Left, Middle, Right};
 
-/// The enum `Among` with variants `Left` and `Right` is a general purpose
-/// sum type with two cases.
+/// The enum `Among` with variants `Left`, `Middle` and `Right` is a general purpose
+/// sum type with three cases.
 ///
 /// The `Among` type is symmetric and treats its variants the same way, without
 /// preference.
