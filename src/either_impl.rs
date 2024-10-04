@@ -195,3 +195,25 @@ impl<L, M, R> Among<L, M, R> {
     }
   }
 }
+
+impl<A, B, C> From<Either<Either<A, B>, C>> for Among<A, B, C> {
+  #[inline]
+  fn from(either: Either<Either<A, B>, C>) -> Among<A, B, C> {
+    match either {
+      Either::Left(Either::Left(a)) => Among::Left(a),
+      Either::Left(Either::Right(b)) => Among::Middle(b),
+      Either::Right(c) => Among::Right(c),
+    }
+  }
+}
+
+impl<A, B, C> From<Either<A, Either<B, C>>> for Among<A, B, C> {
+  #[inline]
+  fn from(either: Either<A, Either<B, C>>) -> Among<A, B, C> {
+    match either {
+      Either::Left(a) => Among::Left(a),
+      Either::Right(Either::Left(b)) => Among::Middle(b),
+      Either::Right(Either::Right(c)) => Among::Right(c),
+    }
+  }
+}
