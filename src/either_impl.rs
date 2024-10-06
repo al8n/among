@@ -218,3 +218,85 @@ impl<A, B, C> From<Either<A, B>> for Among<A, B, C> {
     }
   }
 }
+
+/// An extension trait for `Result<Either<A, B>, _>` that provides additional methods.
+pub trait EitherOkExt<E, A, B> {
+  /// Apply the function `f` on the value in the `Left` variant if it is present rewrapping the
+  /// result in `Left`.
+  fn map_left<F, U>(self, f: F) -> Result<Either<U, B>, E>
+  where
+    F: FnOnce(A) -> U;
+
+  /// Apply the function `f` on the value in the `Right` variant if it is present rewrapping the
+  /// result in `Right`.
+  fn map_right<F, U>(self, f: F) -> Result<Either<A, U>, E>
+  where
+    F: FnOnce(B) -> U;
+}
+
+impl<E, A, B> EitherOkExt<E, A, B> for Result<Either<A, B>, E> {
+  #[inline]
+  fn map_left<F, U>(self, f: F) -> Result<Either<U, B>, E>
+  where
+    F: FnOnce(A) -> U,
+  {
+    self.map(|either| either.map_left(f))
+  }
+
+  #[inline]
+  fn map_right<F, U>(self, f: F) -> Result<Either<A, U>, E>
+  where
+    F: FnOnce(B) -> U,
+  {
+    self.map(|either| either.map_right(f))
+  }
+}
+
+/// An extension trait for `Result<T, Either<A, B>>` that provides additional methods.
+pub trait EitherErrExt<T, A, B> {
+  /// Apply the function `f` on the value in the `Left` variant if it is present rewrapping the
+  /// result in `Left`.
+  fn map_err_left<F, U>(self, f: F) -> Result<T, Either<U, B>>
+  where
+    F: FnOnce(A) -> U;
+
+  /// Apply the function `f` on the value in the `Right` variant if it is present rewrapping the
+  /// result in `Right`.
+  fn map_err_right<F, U>(self, f: F) -> Result<T, Either<A, U>>
+  where
+    F: FnOnce(B) -> U;
+}
+
+impl<T, A, B> EitherErrExt<T, A, B> for Result<T, Either<A, B>> {
+  #[inline]
+  fn map_err_left<F, U>(self, f: F) -> Result<T, Either<U, B>>
+  where
+    F: FnOnce(A) -> U,
+  {
+    self.map_err(|either| either.map_left(f))
+  }
+
+  #[inline]
+  fn map_err_right<F, U>(self, f: F) -> Result<T, Either<A, U>>
+  where
+    F: FnOnce(B) -> U,
+  {
+    self.map_err(|either| either.map_right(f))
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn test_ext() {
+    let result: Result<Either<u64, u64>, Either<&str, &str>> = Err(Either::Left("error"));
+    let result = result.map_err_left(|s| s.len());
+    assert_eq!(result, Err(Either::Left(5)));
+
+    let result: Result<Either<u64, u64>, Either<&str, &str>> = Ok(Either::Right(42));
+    let result = result.map_right(|s| s as u128);
+    assert_eq!(result, Ok(Either::Right(42)));
+  }
+}

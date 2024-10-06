@@ -14,12 +14,18 @@ pub mod serde_untagged_optional;
 
 #[cfg(feature = "either")]
 mod either_impl;
+#[cfg(feature = "either")]
+#[cfg_attr(docsrs, doc(cfg(feature = "either")))]
+pub use either_impl::*;
 
 #[cfg(all(feature = "futures-io", feature = "std"))]
 mod futures_impl;
 
 #[cfg(feature = "tokio")]
 mod tokio_impl;
+
+mod result_ext;
+pub use result_ext::*;
 
 use core::convert::{AsMut, AsRef};
 use core::fmt;
@@ -724,7 +730,7 @@ impl<L, M, R> Among<L, M, R> {
   /// use among::*;
   /// let left: Among<_, Box<[u8]>, Vec<u8>> = Left(&["hello"]);
   /// assert_eq!(left.factor_into_iter().next(), Some(Left(&"hello")));
-
+  ///
   /// let right: Among<&[&str], Box<[u8]>, _> = Right(vec![0, 1]);
   /// assert_eq!(right.factor_into_iter().collect::<Vec<_>>(), vec![Right(0), Right(1)]);
   ///
@@ -749,7 +755,7 @@ impl<L, M, R> Among<L, M, R> {
   /// use among::*;
   /// let left: Among<_, Box<[u8]>, Vec<u8>> = Left(["hello"]);
   /// assert_eq!(left.factor_iter().next(), Some(Left(&"hello")));
-
+  ///
   /// let right: Among<[&str; 2], Box<[u8]>, _> = Right(vec![0, 1]);
   /// assert_eq!(right.factor_iter().collect::<Vec<_>>(), vec![Right(&0), Right(&1)]);
   ///
@@ -779,7 +785,7 @@ impl<L, M, R> Among<L, M, R> {
   /// let mut left: Among<_, Box<[u8]>, Vec<u8>> = Left(["hello"]);
   /// left.factor_iter_mut().for_each(|x| *x.unwrap_left() = "goodbye");
   /// assert_eq!(left, Left(["goodbye"]));
-
+  ///
   /// let mut right: Among<[&str; 2], Box<[u8]>, _> = Right(vec![0, 1, 2]);
   /// right.factor_iter_mut().for_each(|x| if let Right(r) = x { *r = -*r; });
   /// assert_eq!(right, Right(vec![0, -1, -2]));
