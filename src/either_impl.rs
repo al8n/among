@@ -2,15 +2,6 @@ use either::Either;
 
 use super::Among;
 
-impl<L, R, M> From<Either<L, R>> for Among<L, M, R> {
-  fn from(either: Either<L, R>) -> Among<L, M, R> {
-    match either {
-      Either::Left(left) => Among::Left(left),
-      Either::Right(right) => Among::Right(right),
-    }
-  }
-}
-
 impl<L, M, R> Among<L, M, R> {
   /// Try to convert the `Among` to `Either<L, M>`. If the `Among` is `Right`, it will return an error.
   ///
@@ -214,6 +205,16 @@ impl<A, B, C> From<Either<A, Either<B, C>>> for Among<A, B, C> {
       Either::Left(a) => Among::Left(a),
       Either::Right(Either::Left(b)) => Among::Middle(b),
       Either::Right(Either::Right(c)) => Among::Right(c),
+    }
+  }
+}
+
+impl<A, B, C> From<Either<A, B>> for Among<A, B, C> {
+  #[inline]
+  fn from(either: Either<A, B>) -> Among<A, B, C> {
+    match either {
+      Either::Left(a) => Among::Left(a),
+      Either::Right(b) => Among::Middle(b),
     }
   }
 }
