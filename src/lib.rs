@@ -2,6 +2,8 @@
 
 #![doc = include_str!("../README.md")]
 #![no_std]
+#![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(docsrs, allow(unused_attributes))]
 
 #[cfg(any(test, feature = "std"))]
 extern crate std;

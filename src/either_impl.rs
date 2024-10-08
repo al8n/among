@@ -5,7 +5,7 @@ use super::Among;
 impl<L, M, R> Among<L, M, R> {
   /// Try to convert the `Among` to `Either<L, M>`. If the `Among` is `Right`, it will return an error.
   ///
-  /// See also [`into_left_middle`].
+  /// See also [`into_left_middle`](Among::into_left_middle).
   ///
   /// # Examples
   ///
@@ -34,7 +34,7 @@ impl<L, M, R> Among<L, M, R> {
 
   /// Attempts to convert the `Among` to `Either<L, M>`. If the `Among` is `Right`, it will panic.
   ///
-  /// See also [`try_into_left_middle`].
+  /// See also [`try_into_left_middle`](Among::try_into_left_middle).
   ///
   /// # Examples
   ///
@@ -65,7 +65,7 @@ impl<L, M, R> Among<L, M, R> {
 
   /// Try to convert the `Among` to `Either<M, R>`. If the `Among` is `Left`, it will return an error.
   ///
-  /// See also [`into_middle_right`].
+  /// See also [`into_middle_right`](Among::into_middle_right).
   ///
   /// # Examples
   ///
@@ -94,7 +94,7 @@ impl<L, M, R> Among<L, M, R> {
 
   /// Attempts to convert the `Among` to `Either<M, R>`. If the `Among` is `Left`, it will panic.
   ///
-  /// See also [`try_into_middle_right`].
+  /// See also [`try_into_middle_right`](Among::try_into_middle_right).
   ///
   /// # Examples
   ///
@@ -125,7 +125,7 @@ impl<L, M, R> Among<L, M, R> {
 
   /// Try to convert the `Among` to `Either<L, R>`. If the `Among` is `Middle`, it will return an error.
   ///
-  /// See also [`into_left_right`].
+  /// See also [`into_left_right`](Among::into_left_right).
   ///
   /// # Examples
   ///
@@ -156,7 +156,7 @@ impl<L, M, R> Among<L, M, R> {
 
   /// Attempts to convert the `Among` to `Either<L, R>`. If the `Among` is `Middle`, it will panic.
   ///
-  /// See also [`try_into_left_right`].
+  /// See also [`try_into_left_right`](Among::try_into_left_right).
   ///
   /// # Examples
   ///
