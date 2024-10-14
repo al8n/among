@@ -814,7 +814,7 @@ impl<L, M, R> Among<L, M, R> {
   /// the result of a function call, it is recommended to use
   /// [`left_or_else`][Self::left_or_else], which is lazily evaluated.
   ///
-  /// # Examples
+  /// ## Examples
   ///
   /// ```
   /// # use among::*;
@@ -837,7 +837,7 @@ impl<L, M, R> Among<L, M, R> {
 
   /// Return left or a default
   ///
-  /// # Examples
+  /// ## Examples
   ///
   /// ```
   /// # use among::*;
@@ -863,7 +863,7 @@ impl<L, M, R> Among<L, M, R> {
 
   /// Returns left value or computes it from a closure
   ///
-  /// # Examples
+  /// ## Examples
   ///
   /// ```
   /// # use among::*;
@@ -894,7 +894,7 @@ impl<L, M, R> Among<L, M, R> {
   /// the result of a function call, it is recommended to use
   /// [`middle_or_else`][Self::middle_or_else], which is lazily evaluated.
   ///
-  /// # Examples
+  /// ## Examples
   ///
   /// ```
   /// # use among::*;
@@ -916,7 +916,7 @@ impl<L, M, R> Among<L, M, R> {
 
   /// Return middle or a default
   ///
-  /// # Examples
+  /// ## Examples
   ///
   /// ```
   /// # use among::*;
@@ -941,7 +941,7 @@ impl<L, M, R> Among<L, M, R> {
 
   /// Returns middle value or computes it from a closure
   ///
-  /// # Examples
+  /// ## Examples
   ///
   /// ```
   /// # use among::*;
@@ -972,7 +972,7 @@ impl<L, M, R> Among<L, M, R> {
   /// the result of a function call, it is recommended to use
   /// [`right_or_else`][Self::right_or_else], which is lazily evaluated.
   ///
-  /// # Examples
+  /// ## Examples
   ///
   /// ```
   /// # use among::*;
@@ -995,7 +995,7 @@ impl<L, M, R> Among<L, M, R> {
 
   /// Return right or a default
   ///
-  /// # Examples
+  /// ## Examples
   ///
   /// ```
   /// # use among::*;
@@ -1021,7 +1021,7 @@ impl<L, M, R> Among<L, M, R> {
 
   /// Returns right value or computes it from a closure
   ///
-  /// # Examples
+  /// ## Examples
   ///
   /// ```
   /// # use among::*;
@@ -1048,7 +1048,7 @@ impl<L, M, R> Among<L, M, R> {
 
   /// Returns the left value
   ///
-  /// # Examples
+  /// ## Examples
   ///
   /// ```
   /// # use among::*;
@@ -1092,7 +1092,7 @@ impl<L, M, R> Among<L, M, R> {
 
   /// Returns the middle value
   ///
-  /// # Examples
+  /// ## Examples
   ///
   /// ```
   /// # use among::*;
@@ -1136,7 +1136,7 @@ impl<L, M, R> Among<L, M, R> {
 
   /// Returns the right value
   ///
-  /// # Examples
+  /// ## Examples
   ///
   /// ```
   /// # use among::*;
@@ -1176,7 +1176,7 @@ impl<L, M, R> Among<L, M, R> {
 
   /// Returns the left value
   ///
-  /// # Examples
+  /// ## Examples
   ///
   /// ```
   /// # use among::*;
@@ -1215,7 +1215,7 @@ impl<L, M, R> Among<L, M, R> {
 
   /// Returns the left value
   ///
-  /// # Examples
+  /// ## Examples
   ///
   /// ```
   /// # use among::*;
@@ -1254,7 +1254,7 @@ impl<L, M, R> Among<L, M, R> {
 
   /// Returns the right value
   ///
-  /// # Examples
+  /// ## Examples
   ///
   /// ```
   /// # use among::*;
@@ -1293,7 +1293,7 @@ impl<L, M, R> Among<L, M, R> {
 
   /// Convert the contained value into `T`
   ///
-  /// # Examples
+  /// ## Examples
   ///
   /// ```
   /// # use among::*;

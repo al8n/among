@@ -7,7 +7,7 @@ impl<L, M, R> Among<L, M, R> {
   ///
   /// See also [`into_left_middle`](Among::into_left_middle).
   ///
-  /// # Examples
+  /// ## Examples
   ///
   /// ```rust
   /// use either::Either;
@@ -36,7 +36,7 @@ impl<L, M, R> Among<L, M, R> {
   ///
   /// See also [`try_into_left_middle`](Among::try_into_left_middle).
   ///
-  /// # Examples
+  /// ## Examples
   ///
   /// ```rust
   /// use either::Either;
@@ -67,7 +67,7 @@ impl<L, M, R> Among<L, M, R> {
   ///
   /// See also [`into_middle_right`](Among::into_middle_right).
   ///
-  /// # Examples
+  /// ## Examples
   ///
   /// ```rust
   /// use either::Either;
@@ -96,7 +96,7 @@ impl<L, M, R> Among<L, M, R> {
   ///
   /// See also [`try_into_middle_right`](Among::try_into_middle_right).
   ///
-  /// # Examples
+  /// ## Examples
   ///
   /// ```rust
   /// use either::Either;
@@ -127,7 +127,7 @@ impl<L, M, R> Among<L, M, R> {
   ///
   /// See also [`into_left_right`](Among::into_left_right).
   ///
-  /// # Examples
+  /// ## Examples
   ///
   /// ```rust
   /// use either::Either;
@@ -158,7 +158,7 @@ impl<L, M, R> Among<L, M, R> {
   ///
   /// See also [`try_into_left_right`](Among::try_into_left_right).
   ///
-  /// # Examples
+  /// ## Examples
   ///
   /// ```rust
   /// use either::Either;
@@ -183,6 +183,81 @@ impl<L, M, R> Among<L, M, R> {
       Among::Left(left) => Either::Left(left),
       Among::Middle(_) => panic!("unexpected Among::Middle"),
       Among::Right(right) => Either::Right(right),
+    }
+  }
+
+  /// Converts the `Either<L, R>` to `Among<L, M, R>`.
+  ///
+  /// ## Examples
+  ///
+  /// ```rust
+  /// use either::Either;
+  /// use among::Among;
+  ///
+  /// let either1: Either<i32, u32> = Either::Left(1);
+  /// let either2: Either<i32, u32> = Either::Right(2);
+  ///
+  /// let among = Among::<i32, (), u32>::from_either_to_left_right(either1);
+  /// assert_eq!(among, Among::Left(1));
+  ///
+  /// let among = Among::<i32, (), u32>::from_either_to_left_right(either2);
+  /// assert_eq!(among, Among::Right(2));
+  /// ```
+  #[inline]
+  pub fn from_either_to_left_right(either: Either<L, R>) -> Among<L, M, R> {
+    match either {
+      Either::Left(left) => Among::Left(left),
+      Either::Right(right) => Among::Right(right),
+    }
+  }
+
+  /// Converts the `Either<L, M>` to `Among<L, M, R>`.
+  ///
+  /// ## Examples
+  ///
+  /// ```rust
+  /// use either::Either;
+  /// use among::Among;
+  ///
+  /// let either1: Either<i32, u32> = Either::Left(1);
+  /// let either2: Either<i32, u32> = Either::Right(2);
+  ///
+  /// let among = Among::<i32, u32, ()>::from_either_to_left_middle(either1);
+  /// assert_eq!(among, Among::Left(1));
+  ///
+  /// let among = Among::<i32, u32, ()>::from_either_to_left_middle(either2);
+  /// assert_eq!(among, Among::Middle(2));
+  /// ```
+  #[inline]
+  pub fn from_either_to_left_middle(either: Either<L, M>) -> Among<L, M, R> {
+    match either {
+      Either::Left(left) => Among::Left(left),
+      Either::Right(middle) => Among::Middle(middle),
+    }
+  }
+
+  /// Converts the `Either<M, R>` to `Among<L, M, R>`.
+  ///
+  /// ## Examples
+  ///
+  /// ```rust
+  /// use either::Either;
+  /// use among::Among;
+  ///
+  /// let either1: Either<u32, i32> = Either::Left(1);
+  /// let either2: Either<u32, i32> = Either::Right(2);
+  ///
+  /// let among = Among::<(), u32, i32>::from_either_to_middle_right(either1);
+  /// assert_eq!(among, Among::Middle(1));
+  ///
+  /// let among = Among::<(), u32, i32>::from_either_to_middle_right(either2);
+  /// assert_eq!(among, Among::Right(2));
+  /// ```
+  #[inline]
+  pub fn from_either_to_middle_right(either: Either<M, R>) -> Among<L, M, R> {
+    match either {
+      Either::Left(middle) => Among::Middle(middle),
+      Either::Right(right) => Among::Right(right),
     }
   }
 }

@@ -21,7 +21,7 @@ pub trait IntoAmong: Sized {
   /// Converts `self` into a [`Right`] variant of [`Among<Self, Self>`](Among)
   /// if `into_left` is `Some(false)`.
   ///
-  /// # Examples
+  /// ## Examples
   ///
   /// ```
   /// use among::{IntoAmong, Left, Right, Middle};
@@ -53,7 +53,7 @@ pub trait IntoAmong: Sized {
   /// Converts `self` into a [`Right`] variant of [`Among<Self, Self>`](Among)
   /// if `into_left(&self)` returns `Some(false)`.
   ///
-  /// # Examples
+  /// ## Examples
   ///
   /// ```
   /// use among::{IntoAmong, Left, Right, Middle};
