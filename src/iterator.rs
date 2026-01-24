@@ -1,4 +1,4 @@
-use super::{for_all, Among, Left, Middle, Right};
+use super::{Among, Left, Middle, Right};
 use core::iter;
 
 macro_rules! wrap_among {
