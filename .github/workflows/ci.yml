@@ -5,18 +5,18 @@ on:
     branches:
       - main
     paths-ignore:
-      - 'README'
-      - 'COPYRIGHT'
-      - 'LICENSE-*'
-      - '**.md'
-      - '**.txt'
+      - "README"
+      - "COPYRIGHT"
+      - "LICENSE-*"
+      - "**.md"
+      - "**.txt"
   pull_request:
     paths-ignore:
-      - 'README'
-      - 'COPYRIGHT'
-      - 'LICENSE-*'
-      - '**.md'
-      - '**.txt'
+      - "README"
+      - "COPYRIGHT"
+      - "LICENSE-*"
+      - "**.md"
+      - "**.txt"
 
 env:
   CARGO_TERM_COLOR: always
@@ -37,13 +37,12 @@ jobs:
           - windows-latest
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v4
-    - name: Install Rust
-      # --no-self-update is necessary because the windows environment cannot self-update rustup.exe.
-      run: rustup update stable --no-self-update && rustup default stable
-    - name: Check formatting
-      run: cargo fmt --all -- --check
-
+      - uses: actions/checkout@v6
+      - name: Install Rust
+        # --no-self-update is necessary because the windows environment cannot self-update rustup.exe.
+        run: rustup update stable --no-self-update && rustup default stable
+      - name: Check formatting
+        run: cargo fmt --all -- --check
 
   # Apply clippy lints
   clippy:
@@ -56,14 +55,14 @@ jobs:
           - windows-latest
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v4
-    - name: Install Rust
-      # --no-self-update is necessary because the windows environment cannot self-update rustup.exe.
-      run: rustup update stable --no-self-update && rustup default stable
-    - name: Install cargo-hack
-      run: cargo install cargo-hack
-    - name: Apply clippy lints
-      run: cargo hack clippy --each-feature
+      - uses: actions/checkout@v6
+      - name: Install Rust
+        # --no-self-update is necessary because the windows environment cannot self-update rustup.exe.
+        run: rustup update stable --no-self-update && rustup default stable
+      - name: Install cargo-hack
+        run: cargo install cargo-hack
+      - name: Apply clippy lints
+        run: cargo hack clippy --each-feature
 
   # Run tests on some extra platforms
   cross:
@@ -87,9 +86,9 @@ jobs:
           - wasm32-wasi
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Cache cargo build and registry
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -127,30 +126,30 @@ jobs:
           - windows-latest
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v4
-    - name: Cache cargo build and registry
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-build-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-build-
-    - name: Install Rust
-      # --no-self-update is necessary because the windows environment cannot self-update rustup.exe.
-      run: rustup update stable --no-self-update && rustup default stable
-    - name: Install cargo-hack
-      run: cargo install cargo-hack
-    - name: Cache ~/.cargo
-      uses: actions/cache@v4
-      with:
-        path: ~/.cargo
-        key: ${{ runner.os }}-coverage-dotcargo
-    - name: Run build
-      run: cargo hack build --feature-powerset
-  
+      - uses: actions/checkout@v6
+      - name: Cache cargo build and registry
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-build-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-build-
+      - name: Install Rust
+        # --no-self-update is necessary because the windows environment cannot self-update rustup.exe.
+        run: rustup update stable --no-self-update && rustup default stable
+      - name: Install cargo-hack
+        run: cargo install cargo-hack
+      - name: Cache ~/.cargo
+        uses: actions/cache@v5
+        with:
+          path: ~/.cargo
+          key: ${{ runner.os }}-coverage-dotcargo
+      - name: Run build
+        run: cargo hack build --feature-powerset
+
   test:
     name: test
     strategy:
@@ -161,37 +160,37 @@ jobs:
           - windows-latest
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v4
-    - name: Cache cargo build and registry
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-test-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-test-
-    - name: Install Rust
-      # --no-self-update is necessary because the windows environment cannot self-update rustup.exe.
-      run: rustup update stable --no-self-update && rustup default stable
-    - name: Install cargo-hack
-      run: cargo install cargo-hack
-    - name: Cache ~/.cargo
-      uses: actions/cache@v4
-      with:
-        path: ~/.cargo
-        key: ${{ runner.os }}-coverage-dotcargo
-    - name: Run test
-      run: cargo hack test --feature-powerset 
+      - uses: actions/checkout@v6
+      - name: Cache cargo build and registry
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-test-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-test-
+      - name: Install Rust
+        # --no-self-update is necessary because the windows environment cannot self-update rustup.exe.
+        run: rustup update stable --no-self-update && rustup default stable
+      - name: Install cargo-hack
+        run: cargo install cargo-hack
+      - name: Cache ~/.cargo
+        uses: actions/cache@v5
+        with:
+          path: ~/.cargo
+          key: ${{ runner.os }}-coverage-dotcargo
+      - name: Run test
+        run: cargo hack test --feature-powerset
 
   docs:
     name: docs
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Cache cargo build and registry
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -220,7 +219,7 @@ jobs:
   #     - cross
   #     - test
   #   steps:
-  #     - uses: actions/checkout@v4
+  #     - uses: actions/checkout@v6
   #     - name: Install latest nightly
   #       uses: actions-rs/toolchain@v1
   #       with:
@@ -231,12 +230,12 @@ jobs:
   #         crate: cargo-tarpaulin
   #         version: latest
   #     - name: Cache ~/.cargo
-  #       uses: actions/cache@v4
+  #       uses: actions/cache@v5
   #       with:
   #         path: ~/.cargo
   #         key: ${{ runner.os }}-coverage-dotcargo
   #     - name: Cache cargo build
-  #       uses: actions/cache@v4
+  #       uses: actions/cache@v5
   #       with:
   #         path: target
   #         key: ${{ runner.os }}-coverage-cargo-build-target
