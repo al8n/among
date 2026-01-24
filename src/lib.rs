@@ -349,6 +349,50 @@ impl<L, M, R> Among<L, M, R> {
     }
   }
 
+  /// Convert `Among<L, M, R>` to `Among<M, L, R>`.
+  ///
+  /// ```
+  /// use among::*;
+  ///
+  /// let left: Among<i32, i64, ()> = Left(123);
+  /// assert_eq!(left.flip_left_middle(), Middle(123));
+  ///
+  /// let right: Among<i32, i64, _> = Right("some value");
+  /// assert_eq!(right.flip_left_middle(), Right("some value"));
+  ///
+  /// let middle: Among<i32, i64, ()> = Middle(456);
+  /// assert_eq!(middle.flip_left_middle(), Left(456));
+  /// ```
+  pub fn flip_left_middle(self) -> Among<M, L, R> {
+    match self {
+      Left(l) => Middle(l),
+      Right(r) => Right(r),
+      Middle(m) => Left(m),
+    }
+  }
+
+  /// Convert `Among<L, M, R>` to `Among<L, R, M>`.
+  ///
+  /// ```
+  /// use among::*;
+  ///
+  /// let left: Among<i32, i64, ()> = Left(123);
+  /// assert_eq!(left.flip_middle_right(), Left(123));
+  ///
+  /// let right: Among<i32, i64, _> = Right("some value");
+  /// assert_eq!(right.flip_middle_right(), Middle("some value"));
+  ///
+  /// let middle: Among<i32, i64, ()> = Middle(456);
+  /// assert_eq!(middle.flip_middle_right(), Right(456));
+  /// ```
+  pub fn flip_middle_right(self) -> Among<L, R, M> {
+    match self {
+      Left(l) => Left(l),
+      Right(r) => Middle(r),
+      Middle(m) => Right(m),
+    }
+  }
+
   /// Apply the function `f` on the value in the `Left` variant if it is present rewrapping the
   /// result in `Left`.
   ///
@@ -1288,6 +1332,56 @@ impl<L, M, R> Among<L, M, R> {
       Among::Right(r) => r,
       Among::Middle(m) => panic!("{}: {:?}", msg, m),
       Among::Left(l) => panic!("{}: {:?}", msg, l),
+    }
+  }
+
+  /// Shift the contained value.
+  ///
+  /// The `Left` variant becomes `Middle`, `Middle` becomes `Right`, and `Right` becomes `Left`.
+  ///
+  /// ## Examples
+  ///
+  /// ```
+  /// # use among::*;
+  /// let left: Among<u8, u16, u32> = Left(123);
+  /// assert_eq!(left.shift_right(), Middle(123));
+  ///
+  /// let middle: Among<u8, u16, u32> = Middle(456);
+  /// assert_eq!(middle.shift_right(), Right(456));
+  ///
+  /// let right: Among<u8, u16, u32> = Right(789);
+  /// assert_eq!(right.shift_right(), Left(789));
+  /// ```
+  pub fn shift_right(self) -> Among<R, L, M> {
+    match self {
+      Among::Left(l) => Among::Middle(l),
+      Among::Middle(m) => Among::Right(m),
+      Among::Right(r) => Among::Left(r),
+    }
+  }
+
+  /// Shift the contained value.
+  ///
+  /// The `Left` variant becomes `Right`, `Middle` becomes `Left`, and `Right` becomes `Middle`.
+  ///
+  /// ## Examples
+  ///
+  /// ```
+  /// # use among::*;
+  /// let left: Among<u8, u16, u32> = Left(123);
+  /// assert_eq!(left.shift_left(), Right(123));
+  ///
+  /// let middle: Among<u8, u16, u32> = Middle(456);
+  /// assert_eq!(middle.shift_left(), Left(456));
+  ///
+  /// let right: Among<u8, u16, u32> = Right(789);
+  /// assert_eq!(right.shift_left(), Middle(789));
+  /// ```
+  pub fn shift_left(self) -> Among<M, R, L> {
+    match self {
+      Among::Left(l) => Among::Right(l),
+      Among::Middle(m) => Among::Left(m),
+      Among::Right(r) => Among::Middle(r),
     }
   }
 
