@@ -29,28 +29,28 @@ The enum `Among` with variants `Left`, `Middle` and `Right` and trait implementa
   
   ```toml
   [dependencies]
-  among = "0.1"
+  among = "0.2"
   ```
 
 - Use without `std` and `alloc`
 
   ```toml
   [dependencies]
-  among = { version = "0.1", default-features = false }
+  among = { version = "0.2", default-features = false }
   ```
 
 - Enable `futures` feature to enable trait implementation including `futures::io::AsyncRead`, `futures::io::AsyncBufRead`, `futures::io::AsyncWrite`, and `futures::io::AsyncSeek`.
   
   ```toml
   [dependencies]
-  among = { version = "0.1", features = ["futures", "std"] }
+  among = { version = "0.2", features = ["futures", "std"] }
   ```
 
 - Enable `tokio` feature to enable trait implementation including `tokio::io::AsyncRead`, `tokio::io::AsyncBufRead`, `tokio::io::AsyncWrite` and `tokio::io::AsyncSeek`.
 
   ```toml
   [dependencies]
-  among = { version = "0.1", features = ["tokio", "std"] }
+  among = { version = "0.2", features = ["tokio", "std"] }
   ```
 
 ## Pedigree
