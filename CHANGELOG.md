@@ -1,4 +1,21 @@
-# 0.2.0 (Unreleased)
+# 0.2.0 (Apr 23rd, 2026)
+
+BREAKING
+
+- Bump minimum supported Rust version (MSRV) to 1.85.0.
+
+FEATURES
+
+- Make the following borrowing accessors `const fn`: `is_left`, `is_middle`, `is_right`, `as_ref`, `as_mut`, `as_pin_ref`, `as_pin_mut`, `left_ref`, `middle_ref`, `right_ref`, `left_mut`, `middle_mut`, `right_mut`, `Among::<T, T, T>::as_inner` and `Among::<T, T, T>::as_inner_mut`.
+- Make `Among::<&L, &M, &R>::copied` and `Among::<&mut L, &mut M, &mut R>::copied` `const fn`.
+
+- Add `Among::is_left_and`, `Among::is_middle_and` and `Among::is_right_and` for predicate-aware variant checks.
+- Add `Among::inspect_left`, `Among::inspect_middle` and `Among::inspect_right` for side-effectful observation that passes `self` through.
+- Add `Among::left_ref`, `Among::middle_ref`, `Among::right_ref`, `Among::left_mut`, `Among::middle_mut` and `Among::right_mut` as `Option<&_>` / `Option<&mut _>` shortcuts over `as_ref()` / `as_mut()`.
+- Add `Among::insert_left`, `Among::insert_middle` and `Among::insert_right` to overwrite `self` with the named variant and return a mutable reference to the new value.
+- Add `Among::get_or_insert_left`, `Among::get_or_insert_middle`, `Among::get_or_insert_right` and their lazy `*_with` counterparts.
+- Add `Among::try_among_into::<T>` for fallible conversion, preserving the originating side via `Result<T, Among<E_L, E_M, E_R>>`.
+- Add `Among::as_inner` and `Among::as_inner_mut` on `Among<T, T, T>` to borrow the contained value without consuming it.
 
 BUG FIXES
 
