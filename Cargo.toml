@@ -1,18 +1,16 @@
 [package]
 name = "among"
-version = "0.1.8"
+version = "0.2.0"
 edition = "2018"
-rust-version = "1.37"
+rust-version = "1.85.0"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/al8n/among"
 homepage = "https://github.com/al8n/among"
 documentation = "https://docs.rs/among"
-description = """
-The enum `Among` with variants `Left`, `Middle` and `Right` is a general purpose sum type with three cases.
-"""
+description = "A general purpose sum type with three cases: the enum `Among` with variants `Left`, `Middle` and `Right`. A three-way counterpart to `Either`, with `no_std`, `serde`, `futures` and `tokio` integrations."
 
-keywords = ["data-structure", "no_std", "either"]
-categories = ["data-structures", "no-std"]
+keywords = ["data-structure", "no-std", "either", "sum-type", "enum"]
+categories = ["data-structures", "no-std", "rust-patterns"]
 
 [features]
 default = ["std"]

@@ -15,7 +15,7 @@
 //! struct IntOrString {
 //!     #[serde(with = "among::serde_untagged")]
 //!     inner: Among<Vec<String>, Box<str>, HashMap<String, i32>>
-//! };
+//! }
 //!
 //! // serialization
 //! let data = IntOrString {

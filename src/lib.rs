@@ -29,12 +29,13 @@ mod tokio_impl;
 mod result_ext;
 pub use result_ext::*;
 
-use core::convert::{AsMut, AsRef};
-use core::fmt;
-use core::future::Future;
-use core::ops::Deref;
-use core::ops::DerefMut;
-use core::pin::Pin;
+use core::{
+  convert::{AsMut, AsRef, TryInto},
+  fmt,
+  future::Future,
+  ops::{Deref, DerefMut},
+  pin::Pin,
+};
 
 #[cfg(any(test, feature = "std"))]
 use std::error::Error;
@@ -126,6 +127,7 @@ impl<L: Clone, M: Clone, R: Clone> Clone for Among<L, M, R> {
   fn clone_from(&mut self, source: &Self) {
     match (self, source) {
       (Left(dest), Left(source)) => dest.clone_from(source),
+      (Middle(dest), Middle(source)) => dest.clone_from(source),
       (Right(dest), Right(source)) => dest.clone_from(source),
       (dest, source) => *dest = source.clone(),
     }
@@ -143,11 +145,8 @@ impl<L, M, R> Among<L, M, R> {
   /// assert_eq!(values[1].is_left(), false);
   /// assert_eq!(values[2].is_left(), false);
   /// ```
-  pub fn is_left(&self) -> bool {
-    match *self {
-      Left(_) => true,
-      _ => false,
-    }
+  pub const fn is_left(&self) -> bool {
+    matches!(*self, Left(_))
   }
 
   /// Return true if the value is the `Right` variant.
@@ -160,14 +159,11 @@ impl<L, M, R> Among<L, M, R> {
   /// assert_eq!(values[1].is_right(), false);
   /// assert_eq!(values[2].is_right(), true);
   /// ```
-  pub fn is_right(&self) -> bool {
-    match *self {
-      Right(_) => true,
-      _ => false,
-    }
+  pub const fn is_right(&self) -> bool {
+    matches!(*self, Right(_))
   }
 
-  /// Return true if the value is the `Right` variant.
+  /// Return true if the value is the `Middle` variant.
   ///
   /// ```
   /// use among::*;
@@ -177,10 +173,187 @@ impl<L, M, R> Among<L, M, R> {
   /// assert_eq!(values[1].is_middle(), true);
   /// assert_eq!(values[2].is_middle(), false);
   /// ```
-  pub fn is_middle(&self) -> bool {
-    match *self {
-      Middle(_) => true,
+  pub const fn is_middle(&self) -> bool {
+    matches!(*self, Middle(_))
+  }
+
+  /// Returns `true` if the value is a `Left` variant and the contained
+  /// value matches the predicate.
+  ///
+  /// ```
+  /// use among::*;
+  ///
+  /// let left: Among<u32, u32, u32> = Left(2);
+  /// assert!(left.is_left_and(|x| *x == 2));
+  /// assert!(!left.is_left_and(|x| *x == 3));
+  ///
+  /// let middle: Among<u32, u32, u32> = Middle(2);
+  /// assert!(!middle.is_left_and(|_| true));
+  /// ```
+  pub fn is_left_and<F>(&self, f: F) -> bool
+  where
+    F: FnOnce(&L) -> bool,
+  {
+    match self {
+      Left(l) => f(l),
       _ => false,
+    }
+  }
+
+  /// Returns `true` if the value is a `Middle` variant and the contained
+  /// value matches the predicate.
+  ///
+  /// ```
+  /// use among::*;
+  ///
+  /// let middle: Among<u32, u32, u32> = Middle(2);
+  /// assert!(middle.is_middle_and(|x| *x == 2));
+  /// assert!(!middle.is_middle_and(|x| *x == 3));
+  ///
+  /// let left: Among<u32, u32, u32> = Left(2);
+  /// assert!(!left.is_middle_and(|_| true));
+  /// ```
+  pub fn is_middle_and<F>(&self, f: F) -> bool
+  where
+    F: FnOnce(&M) -> bool,
+  {
+    match self {
+      Middle(m) => f(m),
+      _ => false,
+    }
+  }
+
+  /// Returns `true` if the value is a `Right` variant and the contained
+  /// value matches the predicate.
+  ///
+  /// ```
+  /// use among::*;
+  ///
+  /// let right: Among<u32, u32, u32> = Right(2);
+  /// assert!(right.is_right_and(|x| *x == 2));
+  /// assert!(!right.is_right_and(|x| *x == 3));
+  ///
+  /// let left: Among<u32, u32, u32> = Left(2);
+  /// assert!(!left.is_right_and(|_| true));
+  /// ```
+  pub fn is_right_and<F>(&self, f: F) -> bool
+  where
+    F: FnOnce(&R) -> bool,
+  {
+    match self {
+      Right(r) => f(r),
+      _ => false,
+    }
+  }
+
+  /// Borrow the `Left` variant as `Option<&L>`; a shorthand for `self.as_ref().left()`.
+  ///
+  /// ```
+  /// use among::*;
+  ///
+  /// let left: Among<u32, (), ()> = Left(1);
+  /// assert_eq!(left.left_ref(), Some(&1));
+  ///
+  /// let middle: Among<u32, u32, ()> = Middle(2);
+  /// assert_eq!(middle.left_ref(), None);
+  /// ```
+  pub const fn left_ref(&self) -> Option<&L> {
+    match self {
+      Left(l) => Some(l),
+      _ => None,
+    }
+  }
+
+  /// Borrow the `Middle` variant as `Option<&M>`; a shorthand for `self.as_ref().middle()`.
+  ///
+  /// ```
+  /// use among::*;
+  ///
+  /// let middle: Among<(), u32, ()> = Middle(2);
+  /// assert_eq!(middle.middle_ref(), Some(&2));
+  ///
+  /// let left: Among<u32, u32, ()> = Left(1);
+  /// assert_eq!(left.middle_ref(), None);
+  /// ```
+  pub const fn middle_ref(&self) -> Option<&M> {
+    match self {
+      Middle(m) => Some(m),
+      _ => None,
+    }
+  }
+
+  /// Borrow the `Right` variant as `Option<&R>`; a shorthand for `self.as_ref().right()`.
+  ///
+  /// ```
+  /// use among::*;
+  ///
+  /// let right: Among<(), (), u32> = Right(3);
+  /// assert_eq!(right.right_ref(), Some(&3));
+  ///
+  /// let left: Among<u32, (), u32> = Left(1);
+  /// assert_eq!(left.right_ref(), None);
+  /// ```
+  pub const fn right_ref(&self) -> Option<&R> {
+    match self {
+      Right(r) => Some(r),
+      _ => None,
+    }
+  }
+
+  /// Mutably borrow the `Left` variant as `Option<&mut L>`.
+  ///
+  /// ```
+  /// use among::*;
+  ///
+  /// let mut left: Among<u32, (), ()> = Left(1);
+  /// if let Some(l) = left.left_mut() { *l = 10; }
+  /// assert_eq!(left, Left(10));
+  ///
+  /// let mut middle: Among<u32, u32, ()> = Middle(2);
+  /// assert!(middle.left_mut().is_none());
+  /// ```
+  pub const fn left_mut(&mut self) -> Option<&mut L> {
+    match self {
+      Left(l) => Some(l),
+      _ => None,
+    }
+  }
+
+  /// Mutably borrow the `Middle` variant as `Option<&mut M>`.
+  ///
+  /// ```
+  /// use among::*;
+  ///
+  /// let mut middle: Among<(), u32, ()> = Middle(2);
+  /// if let Some(m) = middle.middle_mut() { *m = 20; }
+  /// assert_eq!(middle, Middle(20));
+  ///
+  /// let mut left: Among<u32, u32, ()> = Left(1);
+  /// assert!(left.middle_mut().is_none());
+  /// ```
+  pub const fn middle_mut(&mut self) -> Option<&mut M> {
+    match self {
+      Middle(m) => Some(m),
+      _ => None,
+    }
+  }
+
+  /// Mutably borrow the `Right` variant as `Option<&mut R>`.
+  ///
+  /// ```
+  /// use among::*;
+  ///
+  /// let mut right: Among<(), (), u32> = Right(3);
+  /// if let Some(r) = right.right_mut() { *r = 30; }
+  /// assert_eq!(right, Right(30));
+  ///
+  /// let mut left: Among<u32, (), u32> = Left(1);
+  /// assert!(left.right_mut().is_none());
+  /// ```
+  pub const fn right_mut(&mut self) -> Option<&mut R> {
+    match self {
+      Right(r) => Some(r),
+      _ => None,
     }
   }
 
@@ -261,7 +434,7 @@ impl<L, M, R> Among<L, M, R> {
   /// let middle: Among<(), _, ()> = Middle(-321);
   /// assert_eq!(middle.as_ref(), Middle(&-321));
   /// ```
-  pub fn as_ref(&self) -> Among<&L, &M, &R> {
+  pub const fn as_ref(&self) -> Among<&L, &M, &R> {
     match *self {
       Left(ref inner) => Left(inner),
       Middle(ref inner) => Middle(inner),
@@ -291,7 +464,7 @@ impl<L, M, R> Among<L, M, R> {
   /// assert_eq!(right, Right(123));
   /// assert_eq!(middle, Middle(123));
   /// ```
-  pub fn as_mut(&mut self) -> Among<&mut L, &mut M, &mut R> {
+  pub const fn as_mut(&mut self) -> Among<&mut L, &mut M, &mut R> {
     match *self {
       Left(ref mut inner) => Left(inner),
       Middle(ref mut inner) => Middle(inner),
@@ -301,7 +474,7 @@ impl<L, M, R> Among<L, M, R> {
 
   /// Convert `Pin<&Among<L, M, R>>` to `Among<Pin<&L>, Pin<&M>, Pin<&R>>`,
   /// pinned projections of the inner variants.
-  pub fn as_pin_ref(self: Pin<&Self>) -> Among<Pin<&L>, Pin<&M>, Pin<&R>> {
+  pub const fn as_pin_ref(self: Pin<&Self>) -> Among<Pin<&L>, Pin<&M>, Pin<&R>> {
     // SAFETY: We can use `new_unchecked` because the `inner` parts are
     // guaranteed to be pinned, as they come from `self` which is pinned.
     unsafe {
@@ -315,7 +488,7 @@ impl<L, M, R> Among<L, M, R> {
 
   /// Convert `Pin<&mut Among<L, M, R>>` to `Among<Pin<&mut L>, Pin<&mut M>, Pin<&mut R>>`,
   /// pinned projections of the inner variants.
-  pub fn as_pin_mut(self: Pin<&mut Self>) -> Among<Pin<&mut L>, Pin<&mut M>, Pin<&mut R>> {
+  pub const fn as_pin_mut(self: Pin<&mut Self>) -> Among<Pin<&mut L>, Pin<&mut M>, Pin<&mut R>> {
     // SAFETY: `get_unchecked_mut` is fine because we don't move anything.
     // We can use `new_unchecked` because the `inner` parts are guaranteed
     // to be pinned, as they come from `self` which is pinned, and we never
@@ -469,6 +642,79 @@ impl<L, M, R> Among<L, M, R> {
       Middle(m) => Middle(m),
       Right(r) => Right(f(r)),
     }
+  }
+
+  /// Call `f` with the inner value if `self` is `Left`, then return `self` unchanged.
+  ///
+  /// ```
+  /// use among::*;
+  ///
+  /// let mut seen = 0;
+  /// let left: Among<u32, u32, u32> = Left(5);
+  /// let left = left.inspect_left(|v| seen = *v);
+  /// assert_eq!(seen, 5);
+  /// assert_eq!(left, Left(5));
+  ///
+  /// // Other variants are passed through unobserved.
+  /// let right: Among<u32, u32, u32> = Right(9);
+  /// assert_eq!(right.inspect_left(|_| panic!("not called")), Right(9));
+  /// ```
+  pub fn inspect_left<F>(self, f: F) -> Self
+  where
+    F: FnOnce(&L),
+  {
+    if let Left(ref l) = self {
+      f(l);
+    }
+    self
+  }
+
+  /// Call `f` with the inner value if `self` is `Middle`, then return `self` unchanged.
+  ///
+  /// ```
+  /// use among::*;
+  ///
+  /// let mut seen = 0;
+  /// let middle: Among<u32, u32, u32> = Middle(5);
+  /// let middle = middle.inspect_middle(|v| seen = *v);
+  /// assert_eq!(seen, 5);
+  /// assert_eq!(middle, Middle(5));
+  ///
+  /// let left: Among<u32, u32, u32> = Left(9);
+  /// assert_eq!(left.inspect_middle(|_| panic!("not called")), Left(9));
+  /// ```
+  pub fn inspect_middle<F>(self, f: F) -> Self
+  where
+    F: FnOnce(&M),
+  {
+    if let Middle(ref m) = self {
+      f(m);
+    }
+    self
+  }
+
+  /// Call `f` with the inner value if `self` is `Right`, then return `self` unchanged.
+  ///
+  /// ```
+  /// use among::*;
+  ///
+  /// let mut seen = 0;
+  /// let right: Among<u32, u32, u32> = Right(5);
+  /// let right = right.inspect_right(|v| seen = *v);
+  /// assert_eq!(seen, 5);
+  /// assert_eq!(right, Right(5));
+  ///
+  /// let left: Among<u32, u32, u32> = Left(9);
+  /// assert_eq!(left.inspect_right(|_| panic!("not called")), Left(9));
+  /// ```
+  pub fn inspect_right<F>(self, f: F) -> Self
+  where
+    F: FnOnce(&R),
+  {
+    if let Right(ref r) = self {
+      f(r);
+    }
+    self
   }
 
   /// Apply the functions `f` and `g` to the `Left` and `Right` variants
@@ -781,8 +1027,7 @@ impl<L, M, R> Among<L, M, R> {
   /// assert_eq!(right.factor_into_iter().collect::<Vec<_>>(), vec![Right(0), Right(1)]);
   ///
   /// ```
-  // TODO(MSRV): doc(alias) was stabilized in Rust 1.48
-  // #[doc(alias = "transpose")]
+  #[doc(alias = "transpose")]
   pub fn factor_into_iter(self) -> IterAmong<L::IntoIter, M::IntoIter, R::IntoIter>
   where
     L: IntoIterator,
@@ -1102,7 +1347,7 @@ impl<L, M, R> Among<L, M, R> {
   ///
   /// # Panics
   ///
-  /// When `Among` is a `Right` value
+  /// When `Among` is a `Middle` or `Right` value
   ///
   /// ```should_panic
   /// # use among::*;
@@ -1123,10 +1368,7 @@ impl<L, M, R> Among<L, M, R> {
     match self {
       Among::Left(l) => l,
       Among::Middle(m) => {
-        panic!(
-          "called `Among::unwrap_middle()` on a `Middle` value: {:?}",
-          m
-        )
+        panic!("called `Among::unwrap_left()` on a `Middle` value: {:?}", m)
       }
       Among::Right(r) => {
         panic!("called `Among::unwrap_left()` on a `Right` value: {:?}", r)
@@ -1146,7 +1388,7 @@ impl<L, M, R> Among<L, M, R> {
   ///
   /// # Panics
   ///
-  /// When `Among` is a `Right` value
+  /// When `Among` is a `Left` or `Right` value
   ///
   /// ```should_panic
   /// # use among::*;
@@ -1190,7 +1432,7 @@ impl<L, M, R> Among<L, M, R> {
   ///
   /// # Panics
   ///
-  /// When `Among` is a `Left` value
+  /// When `Among` is a `Left` or `Middle` value
   ///
   /// ```should_panic
   /// # use among::*;
@@ -1210,10 +1452,12 @@ impl<L, M, R> Among<L, M, R> {
   {
     match self {
       Among::Right(r) => r,
-      Among::Middle(m) => panic!(
-        "called `Among::unwrap_middle()` on a `Middle` value: {:?}",
-        m
-      ),
+      Among::Middle(m) => {
+        panic!(
+          "called `Among::unwrap_right()` on a `Middle` value: {:?}",
+          m
+        )
+      }
       Among::Left(l) => panic!("called `Among::unwrap_right()` on a `Left` value: {:?}", l),
     }
   }
@@ -1385,6 +1629,186 @@ impl<L, M, R> Among<L, M, R> {
     }
   }
 
+  /// Replace `self` with `Left(value)` and return a mutable reference to the new value.
+  ///
+  /// Any previously-held `Middle` or `Right` value is dropped.
+  ///
+  /// ```
+  /// use among::*;
+  ///
+  /// let mut a: Among<u32, u32, u32> = Right(1);
+  /// let l = a.insert_left(10);
+  /// *l += 1;
+  /// assert_eq!(a, Left(11));
+  /// ```
+  pub fn insert_left(&mut self, value: L) -> &mut L {
+    *self = Left(value);
+    match self {
+      Left(l) => l,
+      _ => unreachable!(),
+    }
+  }
+
+  /// Replace `self` with `Middle(value)` and return a mutable reference to the new value.
+  ///
+  /// Any previously-held `Left` or `Right` value is dropped.
+  ///
+  /// ```
+  /// use among::*;
+  ///
+  /// let mut a: Among<u32, u32, u32> = Left(1);
+  /// let m = a.insert_middle(20);
+  /// *m += 1;
+  /// assert_eq!(a, Middle(21));
+  /// ```
+  pub fn insert_middle(&mut self, value: M) -> &mut M {
+    *self = Middle(value);
+    match self {
+      Middle(m) => m,
+      _ => unreachable!(),
+    }
+  }
+
+  /// Replace `self` with `Right(value)` and return a mutable reference to the new value.
+  ///
+  /// Any previously-held `Left` or `Middle` value is dropped.
+  ///
+  /// ```
+  /// use among::*;
+  ///
+  /// let mut a: Among<u32, u32, u32> = Left(1);
+  /// let r = a.insert_right(30);
+  /// *r += 1;
+  /// assert_eq!(a, Right(31));
+  /// ```
+  pub fn insert_right(&mut self, value: R) -> &mut R {
+    *self = Right(value);
+    match self {
+      Right(r) => r,
+      _ => unreachable!(),
+    }
+  }
+
+  /// If `self` is `Left`, return a mutable reference to the contained value.
+  /// Otherwise replace `self` with `Left(default)` and return a mutable reference to it.
+  ///
+  /// ```
+  /// use among::*;
+  ///
+  /// let mut keep: Among<u32, u32, u32> = Left(7);
+  /// assert_eq!(*keep.get_or_insert_left(99), 7);
+  ///
+  /// let mut overwrite: Among<u32, u32, u32> = Right(1);
+  /// assert_eq!(*overwrite.get_or_insert_left(99), 99);
+  /// assert_eq!(overwrite, Left(99));
+  /// ```
+  pub fn get_or_insert_left(&mut self, default: L) -> &mut L {
+    self.get_or_insert_left_with(|| default)
+  }
+
+  /// If `self` is `Middle`, return a mutable reference to the contained value.
+  /// Otherwise replace `self` with `Middle(default)` and return a mutable reference to it.
+  ///
+  /// ```
+  /// use among::*;
+  ///
+  /// let mut keep: Among<u32, u32, u32> = Middle(7);
+  /// assert_eq!(*keep.get_or_insert_middle(99), 7);
+  ///
+  /// let mut overwrite: Among<u32, u32, u32> = Right(1);
+  /// assert_eq!(*overwrite.get_or_insert_middle(99), 99);
+  /// assert_eq!(overwrite, Middle(99));
+  /// ```
+  pub fn get_or_insert_middle(&mut self, default: M) -> &mut M {
+    self.get_or_insert_middle_with(|| default)
+  }
+
+  /// If `self` is `Right`, return a mutable reference to the contained value.
+  /// Otherwise replace `self` with `Right(default)` and return a mutable reference to it.
+  ///
+  /// ```
+  /// use among::*;
+  ///
+  /// let mut keep: Among<u32, u32, u32> = Right(7);
+  /// assert_eq!(*keep.get_or_insert_right(99), 7);
+  ///
+  /// let mut overwrite: Among<u32, u32, u32> = Left(1);
+  /// assert_eq!(*overwrite.get_or_insert_right(99), 99);
+  /// assert_eq!(overwrite, Right(99));
+  /// ```
+  pub fn get_or_insert_right(&mut self, default: R) -> &mut R {
+    self.get_or_insert_right_with(|| default)
+  }
+
+  /// Like [`get_or_insert_left`][Self::get_or_insert_left] but computes the default lazily.
+  ///
+  /// ```
+  /// use among::*;
+  ///
+  /// let mut a: Among<u32, u32, u32> = Right(1);
+  /// let l = a.get_or_insert_left_with(|| 42);
+  /// *l += 1;
+  /// assert_eq!(a, Left(43));
+  /// ```
+  pub fn get_or_insert_left_with<F>(&mut self, f: F) -> &mut L
+  where
+    F: FnOnce() -> L,
+  {
+    if !self.is_left() {
+      *self = Left(f());
+    }
+    match self {
+      Left(l) => l,
+      _ => unreachable!(),
+    }
+  }
+
+  /// Like [`get_or_insert_middle`][Self::get_or_insert_middle] but computes the default lazily.
+  ///
+  /// ```
+  /// use among::*;
+  ///
+  /// let mut a: Among<u32, u32, u32> = Right(1);
+  /// let m = a.get_or_insert_middle_with(|| 42);
+  /// *m += 1;
+  /// assert_eq!(a, Middle(43));
+  /// ```
+  pub fn get_or_insert_middle_with<F>(&mut self, f: F) -> &mut M
+  where
+    F: FnOnce() -> M,
+  {
+    if !self.is_middle() {
+      *self = Middle(f());
+    }
+    match self {
+      Middle(m) => m,
+      _ => unreachable!(),
+    }
+  }
+
+  /// Like [`get_or_insert_right`][Self::get_or_insert_right] but computes the default lazily.
+  ///
+  /// ```
+  /// use among::*;
+  ///
+  /// let mut a: Among<u32, u32, u32> = Left(1);
+  /// let r = a.get_or_insert_right_with(|| 42);
+  /// *r += 1;
+  /// assert_eq!(a, Right(43));
+  /// ```
+  pub fn get_or_insert_right_with<F>(&mut self, f: F) -> &mut R
+  where
+    F: FnOnce() -> R,
+  {
+    if !self.is_right() {
+      *self = Right(f());
+    }
+    match self {
+      Right(r) => r,
+      _ => unreachable!(),
+    }
+  }
+
   /// Convert the contained value into `T`
   ///
   /// ## Examples
@@ -1409,6 +1833,37 @@ impl<L, M, R> Among<L, M, R> {
       Among::Left(l) => l.into(),
       Among::Middle(m) => m.into(),
       Among::Right(r) => r.into(),
+    }
+  }
+
+  /// Attempt to convert the contained value into `T`, wrapping any conversion error
+  /// in an `Among` preserving the originating side.
+  ///
+  /// ## Examples
+  ///
+  /// ```
+  /// # use among::*;
+  /// // i64 -> i32 is fallible. Picking values that fit succeeds.
+  /// let left: Among<i64, i32, u32> = Left(3i64);
+  /// assert_eq!(left.try_among_into::<i32>().ok(), Some(3i32));
+  ///
+  /// // A value that doesn't fit comes back as an Among carrying the source-side error.
+  /// let left: Among<i64, i32, u32> = Left(i64::MAX);
+  /// assert!(matches!(left.try_among_into::<i32>(), Err(Left(_))));
+  /// ```
+  #[allow(clippy::type_complexity)]
+  pub fn try_among_into<T>(
+    self,
+  ) -> Result<T, Among<<L as TryInto<T>>::Error, <M as TryInto<T>>::Error, <R as TryInto<T>>::Error>>
+  where
+    L: TryInto<T>,
+    M: TryInto<T>,
+    R: TryInto<T>,
+  {
+    match self {
+      Among::Left(l) => l.try_into().map_err(Among::Left),
+      Among::Middle(m) => m.try_into().map_err(Among::Middle),
+      Among::Right(r) => r.try_into().map_err(Among::Right),
     }
   }
 }
@@ -1561,6 +2016,40 @@ impl<T> Among<T, T, T> {
     for_all!(self, inner => inner)
   }
 
+  /// Borrow the contained value when all three type parameters match.
+  ///
+  /// Unlike [`into_inner`][Self::into_inner], this does not consume `self`.
+  ///
+  /// ```
+  /// use among::*;
+  ///
+  /// let left: Among<i32, i32, i32> = Left(1);
+  /// let middle: Among<i32, i32, i32> = Middle(2);
+  /// let right: Among<i32, i32, i32> = Right(3);
+  ///
+  /// assert_eq!(*left.as_inner(), 1);
+  /// assert_eq!(*middle.as_inner(), 2);
+  /// assert_eq!(*right.as_inner(), 3);
+  /// ```
+  pub const fn as_inner(&self) -> &T {
+    for_all!(*self, ref inner => inner)
+  }
+
+  /// Mutably borrow the contained value when all three type parameters match.
+  ///
+  /// Unlike [`into_inner`][Self::into_inner], this does not consume `self`.
+  ///
+  /// ```
+  /// use among::*;
+  ///
+  /// let mut value: Among<i32, i32, i32> = Middle(0);
+  /// *value.as_inner_mut() = 42;
+  /// assert_eq!(value, Middle(42));
+  /// ```
+  pub const fn as_inner_mut(&mut self) -> &mut T {
+    for_all!(*self, ref mut inner => inner)
+  }
+
   /// Map `f` over the contained value and return the result in the
   /// corresponding variant.
   ///
@@ -1602,7 +2091,7 @@ impl<L, M, R> Among<&L, &M, &R> {
 
   /// Maps an `Among<&L, &M, &R>` to an `Among<L, M, R>` by copying the contents of
   /// among branch.
-  pub fn copied(self) -> Among<L, M, R>
+  pub const fn copied(self) -> Among<L, M, R>
   where
     L: Copy,
     M: Copy,
@@ -1634,7 +2123,7 @@ impl<L, M, R> Among<&mut L, &mut M, &mut R> {
 
   /// Maps an `Among<&mut L, &mut M, &mut R>` to an `Among<L, M, R>` by copying the contents of
   /// among branch.
-  pub fn copied(self) -> Among<L, M, R>
+  pub const fn copied(self) -> Among<L, M, R>
   where
     L: Copy,
     M: Copy,
@@ -1956,11 +2445,10 @@ fn seek() {
 
   let use_empty = 1;
   let mut mockdata = [0x00; 256];
-  let mut mockvec = vec![];
   for (i, elem) in mockdata.iter_mut().enumerate() {
-    mockvec.push(i as u8);
     *elem = i as u8;
   }
+  let mockvec: vec::Vec<u8> = vec![];
 
   let mut reader = if use_empty == 0 {
     // Empty didn't impl Seek until Rust 1.51
