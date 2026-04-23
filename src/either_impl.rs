@@ -54,6 +54,10 @@ impl<L, M, R> Among<L, M, R> {
   ///
   /// assert_eq!(either, Either::Right(2));
   /// ```
+  ///
+  /// # Panics
+  ///
+  /// Panics if `self` is `Among::Right`.
   #[inline]
   pub fn into_left_middle(self) -> Either<L, M> {
     match self {
@@ -114,6 +118,10 @@ impl<L, M, R> Among<L, M, R> {
   ///
   /// assert_eq!(either, Either::Right(3));
   /// ```
+  ///
+  /// # Panics
+  ///
+  /// Panics if `self` is `Among::Left`.
   #[inline]
   pub fn into_middle_right(self) -> Either<M, R> {
     match self {
@@ -177,6 +185,10 @@ impl<L, M, R> Among<L, M, R> {
   /// assert_eq!(either, Either::Right(3));
   ///
   /// ```
+  ///
+  /// # Panics
+  ///
+  /// Panics if `self` is `Among::Middle`.
   #[inline]
   pub fn into_left_right(self) -> Either<L, R> {
     match self {

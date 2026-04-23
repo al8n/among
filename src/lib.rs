@@ -126,6 +126,7 @@ impl<L: Clone, M: Clone, R: Clone> Clone for Among<L, M, R> {
   fn clone_from(&mut self, source: &Self) {
     match (self, source) {
       (Left(dest), Left(source)) => dest.clone_from(source),
+      (Middle(dest), Middle(source)) => dest.clone_from(source),
       (Right(dest), Right(source)) => dest.clone_from(source),
       (dest, source) => *dest = source.clone(),
     }
@@ -167,7 +168,7 @@ impl<L, M, R> Among<L, M, R> {
     }
   }
 
-  /// Return true if the value is the `Right` variant.
+  /// Return true if the value is the `Middle` variant.
   ///
   /// ```
   /// use among::*;
@@ -1102,7 +1103,7 @@ impl<L, M, R> Among<L, M, R> {
   ///
   /// # Panics
   ///
-  /// When `Among` is a `Right` value
+  /// When `Among` is a `Middle` or `Right` value
   ///
   /// ```should_panic
   /// # use among::*;
@@ -1123,10 +1124,7 @@ impl<L, M, R> Among<L, M, R> {
     match self {
       Among::Left(l) => l,
       Among::Middle(m) => {
-        panic!(
-          "called `Among::unwrap_middle()` on a `Middle` value: {:?}",
-          m
-        )
+        panic!("called `Among::unwrap_left()` on a `Middle` value: {:?}", m)
       }
       Among::Right(r) => {
         panic!("called `Among::unwrap_left()` on a `Right` value: {:?}", r)
@@ -1146,7 +1144,7 @@ impl<L, M, R> Among<L, M, R> {
   ///
   /// # Panics
   ///
-  /// When `Among` is a `Right` value
+  /// When `Among` is a `Left` or `Right` value
   ///
   /// ```should_panic
   /// # use among::*;
@@ -1190,7 +1188,7 @@ impl<L, M, R> Among<L, M, R> {
   ///
   /// # Panics
   ///
-  /// When `Among` is a `Left` value
+  /// When `Among` is a `Left` or `Middle` value
   ///
   /// ```should_panic
   /// # use among::*;
@@ -1210,10 +1208,9 @@ impl<L, M, R> Among<L, M, R> {
   {
     match self {
       Among::Right(r) => r,
-      Among::Middle(m) => panic!(
-        "called `Among::unwrap_middle()` on a `Middle` value: {:?}",
-        m
-      ),
+      Among::Middle(m) => {
+        panic!("called `Among::unwrap_right()` on a `Middle` value: {:?}", m)
+      }
       Among::Left(l) => panic!("called `Among::unwrap_right()` on a `Left` value: {:?}", l),
     }
   }
@@ -1956,11 +1953,10 @@ fn seek() {
 
   let use_empty = 1;
   let mut mockdata = [0x00; 256];
-  let mut mockvec = vec![];
   for (i, elem) in mockdata.iter_mut().enumerate() {
-    mockvec.push(i as u8);
     *elem = i as u8;
   }
+  let mockvec: vec::Vec<u8> = vec![];
 
   let mut reader = if use_empty == 0 {
     // Empty didn't impl Seek until Rust 1.51
