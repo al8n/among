@@ -516,6 +516,7 @@ fn display_impl() {
   assert_eq!(r.to_string(), "true");
 }
 
+#[cfg(feature = "std")]
 #[test]
 fn error_impl() {
   use std::{error::Error as _, fmt, io};
@@ -555,11 +556,6 @@ fn error_impl() {
 
 #[test]
 fn as_ref_and_as_mut_target_impls() {
-  use std::{
-    ffi::{CStr, CString, OsStr, OsString},
-    path::{Path, PathBuf},
-  };
-
   fn slice_of<T: AsRef<[i32]>>(t: &T) -> &[i32] {
     t.as_ref()
   }
@@ -571,15 +567,6 @@ fn as_ref_and_as_mut_target_impls() {
   }
   fn str_mut_of<T: AsMut<str>>(t: &mut T) -> &mut str {
     t.as_mut()
-  }
-  fn path_of<T: AsRef<Path>>(t: &T) -> &Path {
-    t.as_ref()
-  }
-  fn osstr_of<T: AsRef<OsStr>>(t: &T) -> &OsStr {
-    t.as_ref()
-  }
-  fn cstr_of<T: AsRef<CStr>>(t: &T) -> &CStr {
-    t.as_ref()
   }
   fn vec_ref<T: AsRef<Vec<u8>>>(t: &T) -> &Vec<u8> {
     t.as_ref()
@@ -621,33 +608,6 @@ fn as_ref_and_as_mut_target_impls() {
   let mut r: Among<String, String, String> = Right("a".to_string());
   str_mut_of(&mut r).make_ascii_uppercase();
 
-  // Path AsRef
-  for v in [
-    Left::<PathBuf, PathBuf, PathBuf>(PathBuf::from("/tmp")),
-    Middle(PathBuf::from("/tmp")),
-    Right(PathBuf::from("/tmp")),
-  ] {
-    assert_eq!(path_of(&v), Path::new("/tmp"));
-  }
-
-  // OsStr AsRef
-  for v in [
-    Left::<OsString, OsString, OsString>(OsString::from("x")),
-    Middle(OsString::from("x")),
-    Right(OsString::from("x")),
-  ] {
-    assert_eq!(osstr_of(&v), OsStr::new("x"));
-  }
-
-  // CStr AsRef
-  for v in [
-    Left::<CString, CString, CString>(CString::new("hello").unwrap()),
-    Middle(CString::new("hello").unwrap()),
-    Right(CString::new("hello").unwrap()),
-  ] {
-    assert_eq!(cstr_of(&v).to_bytes(), b"hello");
-  }
-
   // generic Target AsMut on each variant
   let mut l: Among<Vec<u8>, Vec<u8>, Vec<u8>> = Left(vec![1u8]);
   vec_mut(&mut l).push(2);
@@ -664,6 +624,49 @@ fn as_ref_and_as_mut_target_impls() {
   assert_eq!(vec_ref(&m), &vec![1u8]);
   let r: Among<Vec<u8>, Vec<u8>, Vec<u8>> = Right(vec![1]);
   assert_eq!(vec_ref(&r), &vec![1u8]);
+}
+
+#[cfg(feature = "std")]
+#[test]
+fn as_ref_path_osstr_cstr_impls() {
+  use std::{
+    ffi::{CStr, CString, OsStr, OsString},
+    path::{Path, PathBuf},
+  };
+
+  fn path_of<T: AsRef<Path>>(t: &T) -> &Path {
+    t.as_ref()
+  }
+  fn osstr_of<T: AsRef<OsStr>>(t: &T) -> &OsStr {
+    t.as_ref()
+  }
+  fn cstr_of<T: AsRef<CStr>>(t: &T) -> &CStr {
+    t.as_ref()
+  }
+
+  for v in [
+    Left::<PathBuf, PathBuf, PathBuf>(PathBuf::from("/tmp")),
+    Middle(PathBuf::from("/tmp")),
+    Right(PathBuf::from("/tmp")),
+  ] {
+    assert_eq!(path_of(&v), Path::new("/tmp"));
+  }
+
+  for v in [
+    Left::<OsString, OsString, OsString>(OsString::from("x")),
+    Middle(OsString::from("x")),
+    Right(OsString::from("x")),
+  ] {
+    assert_eq!(osstr_of(&v), OsStr::new("x"));
+  }
+
+  for v in [
+    Left::<CString, CString, CString>(CString::new("hello").unwrap()),
+    Middle(CString::new("hello").unwrap()),
+    Right(CString::new("hello").unwrap()),
+  ] {
+    assert_eq!(cstr_of(&v).to_bytes(), b"hello");
+  }
 }
 
 #[test]
@@ -685,6 +688,7 @@ fn deref_mut_works() {
   assert_eq!(a, Right("HI".to_string()));
 }
 
+#[cfg(feature = "std")]
 #[test]
 fn bufread_impl() {
   use std::io::{BufRead, Cursor};
@@ -706,6 +710,7 @@ fn bufread_impl() {
   run(r);
 }
 
+#[cfg(feature = "std")]
 #[test]
 fn write_and_read_extras() {
   use std::io::{Read, Seek, SeekFrom, Write};
