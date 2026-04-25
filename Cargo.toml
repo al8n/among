@@ -10,7 +10,7 @@ documentation = "https://docs.rs/among"
 description = "A general purpose sum type with three cases: the enum `Among` with variants `Left`, `Middle` and `Right`. A three-way counterpart to `Either`, with `no_std`, `serde`, `futures` and `tokio` integrations."
 
 keywords = ["data-structure", "no-std", "either", "sum-type", "enum"]
-categories = ["data-structures", "no-std", "rust-patterns"]
+categories = ["data-structures", "no-std", "no-std::no-alloc", "rust-patterns"]
 
 [features]
 default = ["std"]
