@@ -18,27 +18,26 @@ pub mod serde_untagged_optional;
 mod either_impl;
 #[cfg(feature = "either")]
 #[cfg_attr(docsrs, doc(cfg(feature = "either")))]
-pub use either_impl::*;
+pub use either_impl::{EitherErrExt, EitherOkExt};
 
-#[cfg(all(feature = "futures-io", feature = "std"))]
+#[cfg(feature = "futures")]
 mod futures_impl;
 
 #[cfg(feature = "tokio")]
 mod tokio_impl;
 
 mod result_ext;
-pub use result_ext::*;
+pub use result_ext::{AmongErrorExt, AmongOkExt};
 
 use core::{
   convert::{AsMut, AsRef, TryInto},
+  error::Error,
   fmt,
   future::Future,
   ops::{Deref, DerefMut},
   pin::Pin,
 };
 
-#[cfg(any(test, feature = "std"))]
-use std::error::Error;
 #[cfg(any(test, feature = "std"))]
 use std::io::{self, BufRead, Read, Seek, SeekFrom, Write};
 
@@ -61,9 +60,9 @@ pub enum Among<L, M, R> {
   Right(R),
 }
 
-/// Evaluate the provided expression for both [`Among::Left`] and [`Among::Right`].
+/// Evaluate the provided expression for each [`Among`] variant.
 ///
-/// This macro is useful in cases where both sides of [`Among`] can be interacted with
+/// This macro is useful in cases where all variants of [`Among`] can be interacted with
 /// in the same way even though the don't share the same type.
 ///
 /// Syntax: `among::for_all!(` *expression* `,` *pattern* `=>` *expression* `)`
@@ -180,19 +179,26 @@ impl<L, M, R> Among<L, M, R> {
   /// Returns `true` if the value is a `Left` variant and the contained
   /// value matches the predicate.
   ///
+  /// This consumes `self`. To test a borrowed value, call this method on
+  /// [`Among::as_ref`].
+  ///
   /// ```
   /// use among::*;
   ///
   /// let left: Among<u32, u32, u32> = Left(2);
-  /// assert!(left.is_left_and(|x| *x == 2));
-  /// assert!(!left.is_left_and(|x| *x == 3));
+  /// assert!(left.is_left_and(|x| x == 2));
+  /// assert!(!left.is_left_and(|x| x == 3));
   ///
   /// let middle: Among<u32, u32, u32> = Middle(2);
   /// assert!(!middle.is_left_and(|_| true));
+  ///
+  /// let left = Left::<String, (), ()>("left".into());
+  /// assert!(left.as_ref().is_left_and(|value| value.len() == 4));
+  /// assert_eq!(left, Left("left".into()));
   /// ```
-  pub fn is_left_and<F>(&self, f: F) -> bool
+  pub fn is_left_and<F>(self, f: F) -> bool
   where
-    F: FnOnce(&L) -> bool,
+    F: FnOnce(L) -> bool,
   {
     match self {
       Left(l) => f(l),
@@ -207,15 +213,15 @@ impl<L, M, R> Among<L, M, R> {
   /// use among::*;
   ///
   /// let middle: Among<u32, u32, u32> = Middle(2);
-  /// assert!(middle.is_middle_and(|x| *x == 2));
-  /// assert!(!middle.is_middle_and(|x| *x == 3));
+  /// assert!(middle.is_middle_and(|x| x == 2));
+  /// assert!(!middle.is_middle_and(|x| x == 3));
   ///
   /// let left: Among<u32, u32, u32> = Left(2);
   /// assert!(!left.is_middle_and(|_| true));
   /// ```
-  pub fn is_middle_and<F>(&self, f: F) -> bool
+  pub fn is_middle_and<F>(self, f: F) -> bool
   where
-    F: FnOnce(&M) -> bool,
+    F: FnOnce(M) -> bool,
   {
     match self {
       Middle(m) => f(m),
@@ -230,15 +236,15 @@ impl<L, M, R> Among<L, M, R> {
   /// use among::*;
   ///
   /// let right: Among<u32, u32, u32> = Right(2);
-  /// assert!(right.is_right_and(|x| *x == 2));
-  /// assert!(!right.is_right_and(|x| *x == 3));
+  /// assert!(right.is_right_and(|x| x == 2));
+  /// assert!(!right.is_right_and(|x| x == 3));
   ///
   /// let left: Among<u32, u32, u32> = Left(2);
   /// assert!(!left.is_right_and(|_| true));
   /// ```
-  pub fn is_right_and<F>(&self, f: F) -> bool
+  pub fn is_right_and<F>(self, f: F) -> bool
   where
-    F: FnOnce(&R) -> bool,
+    F: FnOnce(R) -> bool,
   {
     match self {
       Right(r) => f(r),
@@ -469,6 +475,38 @@ impl<L, M, R> Among<L, M, R> {
       Left(ref mut inner) => Left(inner),
       Middle(ref mut inner) => Middle(inner),
       Right(ref mut inner) => Right(inner),
+    }
+  }
+
+  /// Convert `&Among<L, M, R>` to an `Among` of dereferenced targets.
+  ///
+  /// Each variant may dereference to a different target type.
+  pub fn as_deref(&self) -> Among<&L::Target, &M::Target, &R::Target>
+  where
+    L: Deref,
+    M: Deref,
+    R: Deref,
+  {
+    match self {
+      Left(inner) => Left(inner.deref()),
+      Middle(inner) => Middle(inner.deref()),
+      Right(inner) => Right(inner.deref()),
+    }
+  }
+
+  /// Convert `&mut Among<L, M, R>` to an `Among` of mutable dereferenced targets.
+  ///
+  /// Each variant may dereference to a different target type.
+  pub fn as_deref_mut(&mut self) -> Among<&mut L::Target, &mut M::Target, &mut R::Target>
+  where
+    L: DerefMut,
+    M: DerefMut,
+    R: DerefMut,
+  {
+    match self {
+      Left(inner) => Left(inner.deref_mut()),
+      Middle(inner) => Middle(inner.deref_mut()),
+      Right(inner) => Right(inner.deref_mut()),
     }
   }
 
@@ -717,10 +755,8 @@ impl<L, M, R> Among<L, M, R> {
     self
   }
 
-  /// Apply the functions `f` and `g` to the `Left` and `Right` variants
-  /// respectively. This is equivalent to
-  /// [bimap](https://hackage.haskell.org/package/bifunctors-5/docs/Data-Bifunctor.html)
-  /// in functional programming.
+  /// Apply `f`, `g`, and `h` to the `Left`, `Middle`, and `Right` variants,
+  /// respectively.
   ///
   /// ```
   /// use among::*;
@@ -749,14 +785,14 @@ impl<L, M, R> Among<L, M, R> {
   }
 
   /// Similar to [`map_among`][Self::map_among], with an added context `ctx` accessible to
-  /// both functions.
+  /// all three functions.
   ///
   /// ```
   /// use among::*;
   ///
   /// let mut sum = 0;
   ///
-  /// // Both closures want to update the same value, so pass it as context.
+  /// // All three closures want to update the same value, so pass it as context.
   /// let mut f = |sum: &mut usize, s: String| { *sum += s.len(); s.to_uppercase() };
   /// let mut g = |sum: &mut usize, i: i32| { *sum += i as usize; i.to_string() };
   /// let mut h = |sum: &mut usize, u: usize| { *sum += u; u.to_string() };
@@ -851,6 +887,18 @@ impl<L, M, R> Among<L, M, R> {
     }
   }
 
+  /// Return `other` if `self` is [`Among::Left`], otherwise preserve the active variant.
+  ///
+  /// Arguments to this method are eagerly evaluated. Use
+  /// [`Among::left_and_then`] to compute `other` lazily.
+  pub fn left_and<N>(self, other: Among<N, M, R>) -> Among<N, M, R> {
+    match self {
+      Left(_) => other,
+      Middle(m) => Middle(m),
+      Right(r) => Right(r),
+    }
+  }
+
   /// Apply the function `f` on the value in the `Left` variant if it is present.
   ///
   /// ```
@@ -869,6 +917,18 @@ impl<L, M, R> Among<L, M, R> {
     match self {
       Left(l) => f(l),
       Middle(m) => Middle(m),
+      Right(r) => Right(r),
+    }
+  }
+
+  /// Return `other` if `self` is [`Among::Middle`], otherwise preserve the active variant.
+  ///
+  /// Arguments to this method are eagerly evaluated. Use
+  /// [`Among::middle_and_then`] to compute `other` lazily.
+  pub fn middle_and<N>(self, other: Among<L, N, R>) -> Among<L, N, R> {
+    match self {
+      Left(l) => Left(l),
+      Middle(_) => other,
       Right(r) => Right(r),
     }
   }
@@ -892,6 +952,18 @@ impl<L, M, R> Among<L, M, R> {
       Left(l) => Left(l),
       Middle(m) => f(m),
       Right(r) => Right(r),
+    }
+  }
+
+  /// Return `other` if `self` is [`Among::Right`], otherwise preserve the active variant.
+  ///
+  /// Arguments to this method are eagerly evaluated. Use
+  /// [`Among::right_and_then`] to compute `other` lazily.
+  pub fn right_and<N>(self, other: Among<L, M, N>) -> Among<L, M, N> {
+    match self {
+      Left(l) => Left(l),
+      Middle(m) => Middle(m),
+      Right(_) => other,
     }
   }
 
@@ -1016,7 +1088,7 @@ impl<L, M, R> Among<L, M, R> {
   /// Converts an `Among` of `Iterator`s to be an `Iterator` of `Among`s
   ///
   /// Unlike [`into_iter`][Among::into_iter], this does not require the
-  /// `Left` and `Right` iterators to have the same item type.
+  /// `Left`, `Middle`, and `Right` iterators to have the same item type.
   ///
   /// ```
   /// use among::*;
@@ -1150,7 +1222,10 @@ impl<L, M, R> Among<L, M, R> {
     }
   }
 
-  /// Returns left value or computes it from a closure
+  /// Returns the left value or computes it from a closure.
+  ///
+  /// The first closure handles [`Among::Middle`] and the second handles
+  /// [`Among::Right`], matching the declaration order of [`Among`].
   ///
   /// ## Examples
   ///
@@ -1167,13 +1242,13 @@ impl<L, M, R> Among<L, M, R> {
   /// ```
   pub fn left_or_else<F, G>(self, f: F, g: G) -> L
   where
-    F: FnOnce(R) -> L,
-    G: FnOnce(M) -> L,
+    F: FnOnce(M) -> L,
+    G: FnOnce(R) -> L,
   {
     match self {
       Among::Left(l) => l,
-      Among::Right(r) => f(r),
-      Among::Middle(m) => g(m),
+      Among::Middle(m) => f(m),
+      Among::Right(r) => g(r),
     }
   }
 
@@ -1882,8 +1957,7 @@ impl<L, M, R> Among<Option<L>, Option<M>, Option<R>> {
   /// let middle: Among<Option<Vec<u8>>, _, Option<String>> = Middle(Some(123));
   /// assert_eq!(middle.factor_none(), Some(Middle(123)));
   /// ```
-  // TODO(MSRV): doc(alias) was stabilized in Rust 1.48
-  // #[doc(alias = "transpose")]
+  #[doc(alias = "transpose")]
   pub fn factor_none(self) -> Option<Among<L, M, R>> {
     match self {
       Left(l) => l.map(Among::Left),
@@ -1909,8 +1983,7 @@ impl<L, M, R, E> Among<Result<L, E>, Result<M, E>, Result<R, E>> {
   /// let middle: Among<Result<Vec<u8>, u32>, _, Result<String, u32>> = Middle(Ok(123));
   /// assert_eq!(middle.factor_err(), Ok(Middle(123)));
   /// ```
-  // TODO(MSRV): doc(alias) was stabilized in Rust 1.48
-  // #[doc(alias = "transpose")]
+  #[doc(alias = "transpose")]
   pub fn factor_err(self) -> Result<Among<L, M, R>, E> {
     match self {
       Left(l) => l.map(Among::Left),
@@ -1936,8 +2009,7 @@ impl<T, L, M, R> Among<Result<T, L>, Result<T, M>, Result<T, R>> {
   /// let middle: Among<Result<u32, Vec<u8>>, _, Result<u32, String>> = Middle(Err(-123));
   /// assert_eq!(middle.factor_ok(), Err(Middle(-123)));
   /// ```
-  // TODO(MSRV): doc(alias) was stabilized in Rust 1.48
-  // #[doc(alias = "transpose")]
+  #[doc(alias = "transpose")]
   pub fn factor_ok(self) -> Result<T, Among<L, M, R>> {
     match self {
       Left(l) => l.map_err(Among::Left),
@@ -1998,7 +2070,7 @@ impl<T, L, M, R> Among<(L, T), (M, T), (R, T)> {
 }
 
 impl<T> Among<T, T, T> {
-  /// Extract the value of an among over two equivalent types.
+  /// Extract the value of an `Among` whose three type parameters are identical.
   ///
   /// ```
   /// use among::*;
@@ -2137,7 +2209,10 @@ impl<L, M, R> Among<&mut L, &mut M, &mut R> {
   }
 }
 
-/// `Among<L, M, R>` is a future if both `L`, `M` and `R` are futures.
+/// `Among<L, M, R>` is a future if `L`, `M`, and `R` are futures.
+///
+/// Each variant may produce a different output type; polling preserves the
+/// active variant in the resulting [`Among`].
 impl<L, M, R> Future for Among<L, M, R>
 where
   L: Future,
@@ -2159,7 +2234,9 @@ where
 }
 
 #[cfg(any(test, feature = "std"))]
-/// `Among<L, M, R>` implements `Read` if both `L` and `R` do.
+/// `Among<L, M, R>` implements `Read` if `L`, `M`, and `R` do.
+///
+/// `read_vectored` is forwarded directly to the active value.
 ///
 /// Requires crate feature `"std"`
 impl<L, M, R> Read for Among<L, M, R>
@@ -2170,6 +2247,10 @@ where
 {
   fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
     for_all!(*self, ref mut inner => inner.read(buf))
+  }
+
+  fn read_vectored(&mut self, bufs: &mut [io::IoSliceMut<'_>]) -> io::Result<usize> {
+    for_all!(*self, ref mut inner => inner.read_vectored(bufs))
   }
 
   fn read_exact(&mut self, buf: &mut [u8]) -> io::Result<()> {
@@ -2186,7 +2267,10 @@ where
 }
 
 #[cfg(any(test, feature = "std"))]
-/// `Among<L, M, R>` implements `Seek` if both `L` and `R` do.
+/// `Among<L, M, R>` implements `Seek` if `L`, `M`, and `R` do.
+///
+/// `rewind`, `stream_position`, and `seek_relative` are forwarded directly to
+/// the active value.
 ///
 /// Requires crate feature `"std"`
 impl<L, M, R> Seek for Among<L, M, R>
@@ -2198,9 +2282,23 @@ where
   fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
     for_all!(*self, ref mut inner => inner.seek(pos))
   }
+
+  fn rewind(&mut self) -> io::Result<()> {
+    for_all!(*self, ref mut inner => inner.rewind())
+  }
+
+  fn stream_position(&mut self) -> io::Result<u64> {
+    for_all!(*self, ref mut inner => inner.stream_position())
+  }
+
+  fn seek_relative(&mut self, offset: i64) -> io::Result<()> {
+    for_all!(*self, ref mut inner => inner.seek_relative(offset))
+  }
 }
 
 #[cfg(any(test, feature = "std"))]
+/// `skip_until` is forwarded directly to the active value.
+///
 /// Requires crate feature `"std"`
 impl<L, M, R> BufRead for Among<L, M, R>
 where
@@ -2216,6 +2314,10 @@ where
     for_all!(*self, ref mut inner => inner.consume(amt))
   }
 
+  fn skip_until(&mut self, byte: u8) -> io::Result<usize> {
+    for_all!(*self, ref mut inner => inner.skip_until(byte))
+  }
+
   fn read_until(&mut self, byte: u8, buf: &mut std::vec::Vec<u8>) -> io::Result<usize> {
     for_all!(*self, ref mut inner => inner.read_until(byte, buf))
   }
@@ -2228,6 +2330,8 @@ where
 #[cfg(any(test, feature = "std"))]
 /// `Among<L, M, R>` implements `Write` if all of `L`, `M` and `R` do.
 ///
+/// `write_vectored` is forwarded directly to the active value.
+///
 /// Requires crate feature `"std"`
 impl<L, M, R> Write for Among<L, M, R>
 where
@@ -2237,6 +2341,10 @@ where
 {
   fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
     for_all!(*self, ref mut inner => inner.write(buf))
+  }
+
+  fn write_vectored(&mut self, bufs: &[io::IoSlice<'_>]) -> io::Result<usize> {
+    for_all!(*self, ref mut inner => inner.write_vectored(bufs))
   }
 
   fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
@@ -2359,10 +2467,7 @@ where
   }
 }
 
-#[cfg(any(test, feature = "std"))]
-/// `Among` implements `Error` if *all* of `L`, `M` and `R` implement it.
-///
-/// Requires crate feature `"std"`
+/// `Among` implements [`Error`] if *all* of `L`, `M`, and `R` implement it.
 impl<L, M, R> Error for Among<L, M, R>
 where
   L: Error,
@@ -2384,14 +2489,41 @@ where
   }
 }
 
-impl<L, M, R> fmt::Display for Among<L, M, R>
+macro_rules! impl_fmt_traits {
+  ($($trait:ident),* $(,)?) => {
+    $(
+      impl<L, M, R> fmt::$trait for Among<L, M, R>
+      where
+        L: fmt::$trait,
+        M: fmt::$trait,
+        R: fmt::$trait,
+      {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+          for_all!(*self, ref inner => fmt::$trait::fmt(inner, f))
+        }
+      }
+    )*
+  };
+}
+
+impl_fmt_traits!(Binary, Display, LowerExp, LowerHex, Octal, Pointer, UpperExp, UpperHex);
+
+impl<L, M, R> fmt::Write for Among<L, M, R>
 where
-  L: fmt::Display,
-  M: fmt::Display,
-  R: fmt::Display,
+  L: fmt::Write,
+  M: fmt::Write,
+  R: fmt::Write,
 {
-  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    for_all!(*self, ref inner => inner.fmt(f))
+  fn write_str(&mut self, s: &str) -> fmt::Result {
+    for_all!(*self, ref mut inner => inner.write_str(s))
+  }
+
+  fn write_char(&mut self, c: char) -> fmt::Result {
+    for_all!(*self, ref mut inner => inner.write_char(c))
+  }
+
+  fn write_fmt(&mut self, args: fmt::Arguments<'_>) -> fmt::Result {
+    for_all!(*self, ref mut inner => inner.write_fmt(args))
   }
 }
 

@@ -1,7 +1,12 @@
 use super::Among;
 
+mod private {
+  pub trait AmongErrorExtSealed {}
+  pub trait AmongOkExtSealed {}
+}
+
 /// An extension trait for `Result<_, Among<A, B, C>>` that provides additional methods.
-pub trait AmongErrorExt<T, L, M, R> {
+pub trait AmongErrorExt<T, L, M, R>: private::AmongErrorExtSealed {
   /// Apply the function `f` on the value in the `Left` variant if it is present rewrapping the
   /// result in `Left`.
   fn map_err_left<F, N>(self, l: F) -> Result<T, Among<N, M, R>>
@@ -20,6 +25,8 @@ pub trait AmongErrorExt<T, L, M, R> {
   where
     F: FnOnce(R) -> N;
 }
+
+impl<T, L, M, R> private::AmongErrorExtSealed for Result<T, Among<L, M, R>> {}
 
 impl<T, L, M, R> AmongErrorExt<T, L, M, R> for Result<T, Among<L, M, R>> {
   #[inline]
@@ -48,7 +55,7 @@ impl<T, L, M, R> AmongErrorExt<T, L, M, R> for Result<T, Among<L, M, R>> {
 }
 
 /// An extension trait for `Result<Among<A, B, C>, _>` that provides additional methods.
-pub trait AmongOkExt<E, L, M, R> {
+pub trait AmongOkExt<E, L, M, R>: private::AmongOkExtSealed {
   /// Apply the function `f` on the value in the `Left` variant if it is present rewrapping the
   /// result in `Left`.
   fn map_left<F, N>(self, l: F) -> Result<Among<N, M, R>, E>
@@ -67,6 +74,8 @@ pub trait AmongOkExt<E, L, M, R> {
   where
     F: FnOnce(R) -> N;
 }
+
+impl<E, L, M, R> private::AmongOkExtSealed for Result<Among<L, M, R>, E> {}
 
 impl<E, L, M, R> AmongOkExt<E, L, M, R> for Result<Among<L, M, R>, E> {
   #[inline]

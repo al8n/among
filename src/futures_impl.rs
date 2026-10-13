@@ -21,6 +21,18 @@ where
       Among::Right(right) => right.poll_read(cx, buf),
     }
   }
+
+  fn poll_read_vectored(
+    self: Pin<&mut Self>,
+    cx: &mut Context,
+    bufs: &mut [io::IoSliceMut<'_>],
+  ) -> Poll<io::Result<usize>> {
+    match self.as_pin_mut() {
+      Among::Left(left) => left.poll_read_vectored(cx, bufs),
+      Among::Middle(middle) => middle.poll_read_vectored(cx, bufs),
+      Among::Right(right) => right.poll_read_vectored(cx, bufs),
+    }
+  }
 }
 
 impl<L, M, R> AsyncBufRead for Among<L, M, R>
@@ -57,6 +69,18 @@ where
       Among::Left(left) => left.poll_write(cx, buf),
       Among::Middle(middle) => middle.poll_write(cx, buf),
       Among::Right(right) => right.poll_write(cx, buf),
+    }
+  }
+
+  fn poll_write_vectored(
+    self: Pin<&mut Self>,
+    cx: &mut Context,
+    bufs: &[io::IoSlice<'_>],
+  ) -> Poll<io::Result<usize>> {
+    match self.as_pin_mut() {
+      Among::Left(left) => left.poll_write_vectored(cx, bufs),
+      Among::Middle(middle) => middle.poll_write_vectored(cx, bufs),
+      Among::Right(right) => right.poll_write_vectored(cx, bufs),
     }
   }
 

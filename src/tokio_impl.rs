@@ -2,6 +2,7 @@ use core::{
   pin::Pin,
   task::{Context, Poll},
 };
+use std::io::IoSlice;
 
 use tokio::io::{self, AsyncBufRead, AsyncRead, AsyncSeek, AsyncWrite, ReadBuf};
 
@@ -60,6 +61,26 @@ where
       Among::Left(left) => left.poll_write(cx, buf),
       Among::Middle(middle) => middle.poll_write(cx, buf),
       Among::Right(right) => right.poll_write(cx, buf),
+    }
+  }
+
+  fn poll_write_vectored(
+    self: Pin<&mut Self>,
+    cx: &mut Context,
+    bufs: &[IoSlice<'_>],
+  ) -> Poll<io::Result<usize>> {
+    match self.as_pin_mut() {
+      Among::Left(left) => left.poll_write_vectored(cx, bufs),
+      Among::Middle(middle) => middle.poll_write_vectored(cx, bufs),
+      Among::Right(right) => right.poll_write_vectored(cx, bufs),
+    }
+  }
+
+  fn is_write_vectored(&self) -> bool {
+    match self {
+      Among::Left(left) => left.is_write_vectored(),
+      Among::Middle(middle) => middle.is_write_vectored(),
+      Among::Right(right) => right.is_write_vectored(),
     }
   }
 
