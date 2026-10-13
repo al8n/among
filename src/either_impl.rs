@@ -63,6 +63,7 @@ impl<L, M, R> Among<L, M, R> {
   /// # Panics
   ///
   /// Panics if `self` is `Among::Right`.
+  #[track_caller]
   #[inline]
   pub fn into_left_middle(self) -> Either<L, M> {
     match self {
@@ -127,6 +128,7 @@ impl<L, M, R> Among<L, M, R> {
   /// # Panics
   ///
   /// Panics if `self` is `Among::Left`.
+  #[track_caller]
   #[inline]
   pub fn into_middle_right(self) -> Either<M, R> {
     match self {
@@ -194,6 +196,7 @@ impl<L, M, R> Among<L, M, R> {
   /// # Panics
   ///
   /// Panics if `self` is `Among::Middle`.
+  #[track_caller]
   #[inline]
   pub fn into_left_right(self) -> Either<L, R> {
     match self {

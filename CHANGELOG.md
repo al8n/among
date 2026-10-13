@@ -16,6 +16,8 @@ FEATURES
 - Add reverse conversions from `Among` to both complete nested `Either` shapes.
 - Add eager `left_and`, `middle_and`, and `right_and` combinators plus heterogeneous `as_deref` and `as_deref_mut` views.
 - Forward stable vectored I/O, buffered skipping, and seek-position methods to the active payload, including futures and Tokio vectored writes.
+- Add mapping fallbacks, lazy default insertion, replacement, and single-variant conversion helpers; add `try_left!`, `try_middle!`, and `try_right!` early-return macros.
+- Propagate caller locations through panicking extraction and feature-gated `Either` conversion methods.
 - Make `futures` and `tokio` imply `std`, and keep optional dependency features private to the manifest.
 
 CI

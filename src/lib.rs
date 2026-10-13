@@ -98,6 +98,81 @@ macro_rules! for_all {
   };
 }
 
+/// Extract the [`Left`](Among::Left) payload or return early with a converted residual variant.
+///
+/// This macro evaluates its expression once. If it receives [`Among::Middle`] or
+/// [`Among::Right`], it immediately returns that variant from the enclosing function or closure.
+/// The enclosing return type must be an [`Among`] whose residual payload types implement
+/// [`From`] for the corresponding source payloads.
+///
+/// ```
+/// use among::{Among, Left, Middle};
+///
+/// fn twice(value: Among<u32, u16, u8>) -> Among<u32, u32, u16> {
+///     let value = among::try_left!(value,);
+///     Left(value * 2)
+/// }
+///
+/// assert_eq!(twice(Left(2)), Left(4));
+/// assert_eq!(twice(Middle(3)), Middle(3));
+/// ```
+#[macro_export]
+macro_rules! try_left {
+  ($expr:expr $(,)?) => {
+    match $expr {
+      $crate::Among::Left(value) => value,
+      $crate::Among::Middle(value) => {
+        return $crate::Among::Middle(::core::convert::From::from(value));
+      }
+      $crate::Among::Right(value) => {
+        return $crate::Among::Right(::core::convert::From::from(value));
+      }
+    }
+  };
+}
+
+/// Extract the [`Middle`](Among::Middle) payload or return early with a converted residual variant.
+///
+/// This macro evaluates its expression once. If it receives [`Among::Left`] or
+/// [`Among::Right`], it immediately returns that variant from the enclosing function or closure.
+/// The enclosing return type must be an [`Among`] whose residual payload types implement
+/// [`From`] for the corresponding source payloads.
+#[macro_export]
+macro_rules! try_middle {
+  ($expr:expr $(,)?) => {
+    match $expr {
+      $crate::Among::Left(value) => {
+        return $crate::Among::Left(::core::convert::From::from(value));
+      }
+      $crate::Among::Middle(value) => value,
+      $crate::Among::Right(value) => {
+        return $crate::Among::Right(::core::convert::From::from(value));
+      }
+    }
+  };
+}
+
+/// Extract the [`Right`](Among::Right) payload or return early with a converted residual variant.
+///
+/// This macro evaluates its expression once. If it receives [`Among::Left`] or
+/// [`Among::Middle`], it immediately returns that variant from the enclosing function or closure.
+/// The enclosing return type must be an [`Among`] whose residual payload types implement
+/// [`From`] for the corresponding source payloads.
+#[macro_export]
+macro_rules! try_right {
+  ($expr:expr $(,)?) => {
+    match $expr {
+      $crate::Among::Left(value) => {
+        return $crate::Among::Left(::core::convert::From::from(value));
+      }
+      $crate::Among::Middle(value) => {
+        return $crate::Among::Middle(::core::convert::From::from(value));
+      }
+      $crate::Among::Right(value) => value,
+    }
+  };
+}
+
 macro_rules! map_among {
   ($value:expr, $pattern:pat => $result:expr) => {
     match $value {
@@ -426,6 +501,30 @@ impl<L, M, R> Among<L, M, R> {
     }
   }
 
+  /// Extract the [`Left`] payload, or return the unchanged `Among` on mismatch.
+  pub fn try_into_left(self) -> Result<L, Self> {
+    match self {
+      Left(value) => Ok(value),
+      other => Err(other),
+    }
+  }
+
+  /// Extract the [`Middle`] payload, or return the unchanged `Among` on mismatch.
+  pub fn try_into_middle(self) -> Result<M, Self> {
+    match self {
+      Middle(value) => Ok(value),
+      other => Err(other),
+    }
+  }
+
+  /// Extract the [`Right`] payload, or return the unchanged `Among` on mismatch.
+  pub fn try_into_right(self) -> Result<R, Self> {
+    match self {
+      Right(value) => Ok(value),
+      other => Err(other),
+    }
+  }
+
   /// Convert `&Among<L, M, R>` to `Among<&L, &M, &R>`.
   ///
   /// ```
@@ -630,6 +729,34 @@ impl<L, M, R> Among<L, M, R> {
     }
   }
 
+  /// Apply `mapper` to a [`Left`] payload, or return `default` for another variant.
+  ///
+  /// `default` is eagerly evaluated. Use [`Among::among`] for a payload-aware exhaustive fold.
+  pub fn map_left_or<T, F>(self, default: T, mapper: F) -> T
+  where
+    F: FnOnce(L) -> T,
+  {
+    match self {
+      Left(value) => mapper(value),
+      Middle(_) | Right(_) => default,
+    }
+  }
+
+  /// Apply `mapper` to a [`Left`] payload, or lazily compute a fallback.
+  ///
+  /// `default` is called only for [`Among::Middle`] and [`Among::Right`]. Use
+  /// [`Among::among`] for a payload-aware exhaustive fold.
+  pub fn map_left_or_else<T, D, F>(self, default: D, mapper: F) -> T
+  where
+    D: FnOnce() -> T,
+    F: FnOnce(L) -> T,
+  {
+    match self {
+      Left(value) => mapper(value),
+      Middle(_) | Right(_) => default(),
+    }
+  }
+
   /// Apply the function `f` on the value in the `Middle` variant if it is present rewrapping the
   /// result in `Middle`.
   ///
@@ -656,6 +783,34 @@ impl<L, M, R> Among<L, M, R> {
     }
   }
 
+  /// Apply `mapper` to a [`Middle`] payload, or return `default` for another variant.
+  ///
+  /// `default` is eagerly evaluated. Use [`Among::among`] for a payload-aware exhaustive fold.
+  pub fn map_middle_or<T, F>(self, default: T, mapper: F) -> T
+  where
+    F: FnOnce(M) -> T,
+  {
+    match self {
+      Left(_) | Right(_) => default,
+      Middle(value) => mapper(value),
+    }
+  }
+
+  /// Apply `mapper` to a [`Middle`] payload, or lazily compute a fallback.
+  ///
+  /// `default` is called only for [`Among::Left`] and [`Among::Right`]. Use
+  /// [`Among::among`] for a payload-aware exhaustive fold.
+  pub fn map_middle_or_else<T, D, F>(self, default: D, mapper: F) -> T
+  where
+    D: FnOnce() -> T,
+    F: FnOnce(M) -> T,
+  {
+    match self {
+      Left(_) | Right(_) => default(),
+      Middle(value) => mapper(value),
+    }
+  }
+
   /// Apply the function `f` on the value in the `Right` variant if it is present rewrapping the
   /// result in `Right`.
   ///
@@ -679,6 +834,34 @@ impl<L, M, R> Among<L, M, R> {
       Left(l) => Left(l),
       Middle(m) => Middle(m),
       Right(r) => Right(f(r)),
+    }
+  }
+
+  /// Apply `mapper` to a [`Right`] payload, or return `default` for another variant.
+  ///
+  /// `default` is eagerly evaluated. Use [`Among::among`] for a payload-aware exhaustive fold.
+  pub fn map_right_or<T, F>(self, default: T, mapper: F) -> T
+  where
+    F: FnOnce(R) -> T,
+  {
+    match self {
+      Left(_) | Middle(_) => default,
+      Right(value) => mapper(value),
+    }
+  }
+
+  /// Apply `mapper` to a [`Right`] payload, or lazily compute a fallback.
+  ///
+  /// `default` is called only for [`Among::Left`] and [`Among::Middle`]. Use
+  /// [`Among::among`] for a payload-aware exhaustive fold.
+  pub fn map_right_or_else<T, D, F>(self, default: D, mapper: F) -> T
+  where
+    D: FnOnce() -> T,
+    F: FnOnce(R) -> T,
+  {
+    match self {
+      Left(_) | Middle(_) => default(),
+      Right(value) => mapper(value),
     }
   }
 
@@ -1435,6 +1618,7 @@ impl<L, M, R> Among<L, M, R> {
   /// let middle: Among<(), _, ()> = Middle(3);
   /// middle.unwrap_left();
   /// ```
+  #[track_caller]
   pub fn unwrap_left(self) -> L
   where
     M: core::fmt::Debug,
@@ -1476,6 +1660,7 @@ impl<L, M, R> Among<L, M, R> {
   /// let left: Among<_, (), ()> = Left(3);
   /// left.unwrap_middle();
   /// ```
+  #[track_caller]
   pub fn unwrap_middle(self) -> M
   where
     L: core::fmt::Debug,
@@ -1520,6 +1705,7 @@ impl<L, M, R> Among<L, M, R> {
   /// let middle: Among<(), _, ()> = Middle(3);
   /// middle.unwrap_right();
   /// ```
+  #[track_caller]
   pub fn unwrap_right(self) -> R
   where
     L: core::fmt::Debug,
@@ -1564,6 +1750,7 @@ impl<L, M, R> Among<L, M, R> {
   /// let middle: Among<(), _, ()> = Middle(3);
   /// middle.expect_left("value was not Left");
   /// ```
+  #[track_caller]
   pub fn expect_left(self, msg: &str) -> L
   where
     M: core::fmt::Debug,
@@ -1603,6 +1790,7 @@ impl<L, M, R> Among<L, M, R> {
   /// let left: Among<_, (), ()> = Left(3);
   /// left.expect_middle("value was not Middle");
   /// ```
+  #[track_caller]
   pub fn expect_middle(self, msg: &str) -> M
   where
     L: core::fmt::Debug,
@@ -1642,6 +1830,7 @@ impl<L, M, R> Among<L, M, R> {
   /// let middle: Among<(), _, ()> = Middle(3);
   /// middle.expect_right("value was not Right");
   /// ```
+  #[track_caller]
   pub fn expect_right(self, msg: &str) -> R
   where
     L: core::fmt::Debug,
@@ -1764,6 +1953,21 @@ impl<L, M, R> Among<L, M, R> {
     }
   }
 
+  /// Replace `self` with [`Among::Left`] and return the complete displaced value.
+  pub fn replace_left(&mut self, value: L) -> Self {
+    core::mem::replace(self, Left(value))
+  }
+
+  /// Replace `self` with [`Among::Middle`] and return the complete displaced value.
+  pub fn replace_middle(&mut self, value: M) -> Self {
+    core::mem::replace(self, Middle(value))
+  }
+
+  /// Replace `self` with [`Among::Right`] and return the complete displaced value.
+  pub fn replace_right(&mut self, value: R) -> Self {
+    core::mem::replace(self, Right(value))
+  }
+
   /// If `self` is `Left`, return a mutable reference to the contained value.
   /// Otherwise replace `self` with `Left(default)` and return a mutable reference to it.
   ///
@@ -1813,6 +2017,30 @@ impl<L, M, R> Among<L, M, R> {
   /// ```
   pub fn get_or_insert_right(&mut self, default: R) -> &mut R {
     self.get_or_insert_right_with(|| default)
+  }
+
+  /// Like [`Among::get_or_insert_left_with`], using [`Default::default`] lazily.
+  pub fn get_or_insert_left_default(&mut self) -> &mut L
+  where
+    L: Default,
+  {
+    self.get_or_insert_left_with(L::default)
+  }
+
+  /// Like [`Among::get_or_insert_middle_with`], using [`Default::default`] lazily.
+  pub fn get_or_insert_middle_default(&mut self) -> &mut M
+  where
+    M: Default,
+  {
+    self.get_or_insert_middle_with(M::default)
+  }
+
+  /// Like [`Among::get_or_insert_right_with`], using [`Default::default`] lazily.
+  pub fn get_or_insert_right_default(&mut self) -> &mut R
+  where
+    R: Default,
+  {
+    self.get_or_insert_right_with(R::default)
   }
 
   /// Like [`get_or_insert_left`][Self::get_or_insert_left] but computes the default lazily.

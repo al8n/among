@@ -3,6 +3,27 @@
 
 use among::{Among, IntoAmong, IterAmong, Left, Middle, Right};
 
+std::thread_local! {
+  static DEFAULT_CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+struct CountedDefault;
+
+impl Default for CountedDefault {
+  fn default() -> Self {
+    DEFAULT_CALLS.with(|calls| calls.set(calls.get() + 1));
+    Self
+  }
+}
+
+fn reset_default_calls() {
+  DEFAULT_CALLS.with(|calls| calls.set(0));
+}
+
+fn default_calls() -> usize {
+  DEFAULT_CALLS.with(std::cell::Cell::get)
+}
+
 // --- Construction / accessors / clone -------------------------------------
 
 #[test]
@@ -299,6 +320,83 @@ fn insert_methods() {
 }
 
 #[test]
+fn replace_methods_return_each_displaced_non_copy_variant() {
+  macro_rules! check {
+    ($before:expr, $method:ident, $replacement:expr, $displaced:expr, $installed:expr) => {{
+      let mut value = $before;
+      assert_eq!(value.$method($replacement), $displaced);
+      assert_eq!(value, $installed);
+    }};
+  }
+
+  check!(
+    Left::<String, String, String>("left".to_owned()),
+    replace_left,
+    "new-left".to_owned(),
+    Left("left".to_owned()),
+    Left("new-left".to_owned())
+  );
+  check!(
+    Middle::<String, String, String>("middle".to_owned()),
+    replace_left,
+    "new-left".to_owned(),
+    Middle("middle".to_owned()),
+    Left("new-left".to_owned())
+  );
+  check!(
+    Right::<String, String, String>("right".to_owned()),
+    replace_left,
+    "new-left".to_owned(),
+    Right("right".to_owned()),
+    Left("new-left".to_owned())
+  );
+
+  check!(
+    Left::<String, String, String>("left".to_owned()),
+    replace_middle,
+    "new-middle".to_owned(),
+    Left("left".to_owned()),
+    Middle("new-middle".to_owned())
+  );
+  check!(
+    Middle::<String, String, String>("middle".to_owned()),
+    replace_middle,
+    "new-middle".to_owned(),
+    Middle("middle".to_owned()),
+    Middle("new-middle".to_owned())
+  );
+  check!(
+    Right::<String, String, String>("right".to_owned()),
+    replace_middle,
+    "new-middle".to_owned(),
+    Right("right".to_owned()),
+    Middle("new-middle".to_owned())
+  );
+
+  check!(
+    Left::<String, String, String>("left".to_owned()),
+    replace_right,
+    "new-right".to_owned(),
+    Left("left".to_owned()),
+    Right("new-right".to_owned())
+  );
+  check!(
+    Middle::<String, String, String>("middle".to_owned()),
+    replace_right,
+    "new-right".to_owned(),
+    Middle("middle".to_owned()),
+    Right("new-right".to_owned())
+  );
+  check!(
+    Right::<String, String, String>("right".to_owned()),
+    replace_right,
+    "new-right".to_owned(),
+    Right("right".to_owned()),
+    Right("new-right".to_owned())
+  );
+}
+
+#[test]
 fn get_or_insert_methods() {
   let mut a: Among<u32, u32, u32> = Right(1);
   let l = a.get_or_insert_left(7);
@@ -339,6 +437,122 @@ fn get_or_insert_methods() {
   let r = a.get_or_insert_right_with(|| 42);
   *r += 1;
   assert_eq!(a, Right(43));
+}
+
+#[test]
+fn get_or_insert_default_methods_defer_default_construction() {
+  type Value = Among<CountedDefault, CountedDefault, CountedDefault>;
+
+  let mut value: Value = Left(CountedDefault);
+  reset_default_calls();
+  let _ = value.get_or_insert_left_default();
+  assert_eq!(default_calls(), 0);
+  assert!(matches!(value, Left(_)));
+
+  let mut value: Value = Middle(CountedDefault);
+  reset_default_calls();
+  let _ = value.get_or_insert_left_default();
+  assert_eq!(default_calls(), 1);
+  assert!(matches!(value, Left(_)));
+
+  let mut value: Value = Right(CountedDefault);
+  reset_default_calls();
+  let _ = value.get_or_insert_left_default();
+  assert_eq!(default_calls(), 1);
+  assert!(matches!(value, Left(_)));
+
+  let mut value: Value = Left(CountedDefault);
+  reset_default_calls();
+  let _ = value.get_or_insert_middle_default();
+  assert_eq!(default_calls(), 1);
+  assert!(matches!(value, Middle(_)));
+
+  let mut value: Value = Middle(CountedDefault);
+  reset_default_calls();
+  let _ = value.get_or_insert_middle_default();
+  assert_eq!(default_calls(), 0);
+  assert!(matches!(value, Middle(_)));
+
+  let mut value: Value = Right(CountedDefault);
+  reset_default_calls();
+  let _ = value.get_or_insert_middle_default();
+  assert_eq!(default_calls(), 1);
+  assert!(matches!(value, Middle(_)));
+
+  let mut value: Value = Left(CountedDefault);
+  reset_default_calls();
+  let _ = value.get_or_insert_right_default();
+  assert_eq!(default_calls(), 1);
+  assert!(matches!(value, Right(_)));
+
+  let mut value: Value = Middle(CountedDefault);
+  reset_default_calls();
+  let _ = value.get_or_insert_right_default();
+  assert_eq!(default_calls(), 1);
+  assert!(matches!(value, Right(_)));
+
+  let mut value: Value = Right(CountedDefault);
+  reset_default_calls();
+  let _ = value.get_or_insert_right_default();
+  assert_eq!(default_calls(), 0);
+  assert!(matches!(value, Right(_)));
+}
+
+#[test]
+fn try_into_variant_methods_preserve_mismatches_exactly() {
+  macro_rules! check {
+    ($value:expr, $method:ident, $expected:expr) => {{
+      assert_eq!($value.$method(), $expected);
+    }};
+  }
+
+  check!(
+    Left::<String, String, String>("left".to_owned()),
+    try_into_left,
+    Ok("left".to_owned())
+  );
+  check!(
+    Middle::<String, String, String>("middle".to_owned()),
+    try_into_left,
+    Err(Middle("middle".to_owned()))
+  );
+  check!(
+    Right::<String, String, String>("right".to_owned()),
+    try_into_left,
+    Err(Right("right".to_owned()))
+  );
+
+  check!(
+    Left::<String, String, String>("left".to_owned()),
+    try_into_middle,
+    Err(Left("left".to_owned()))
+  );
+  check!(
+    Middle::<String, String, String>("middle".to_owned()),
+    try_into_middle,
+    Ok("middle".to_owned())
+  );
+  check!(
+    Right::<String, String, String>("right".to_owned()),
+    try_into_middle,
+    Err(Right("right".to_owned()))
+  );
+
+  check!(
+    Left::<String, String, String>("left".to_owned()),
+    try_into_right,
+    Err(Left("left".to_owned()))
+  );
+  check!(
+    Middle::<String, String, String>("middle".to_owned()),
+    try_into_right,
+    Err(Middle("middle".to_owned()))
+  );
+  check!(
+    Right::<String, String, String>("right".to_owned()),
+    try_into_right,
+    Ok("right".to_owned())
+  );
 }
 
 #[test]
@@ -461,6 +675,80 @@ fn map_left_middle_right_all() {
     },
   );
   assert_eq!(sum, 2);
+}
+
+#[test]
+fn map_or_methods_cover_all_variants_and_eager_defaults() {
+  use std::cell::Cell;
+
+  macro_rules! check {
+    ($value:expr, $method:ident, $expected:expr, $default_calls:expr, $mapper_calls:expr) => {{
+      let defaults = Cell::new(0);
+      let mappers = Cell::new(0);
+      let value = ($value).$method(
+        {
+          defaults.set(defaults.get() + 1);
+          -1
+        },
+        |payload| {
+          mappers.set(mappers.get() + 1);
+          payload * 10
+        },
+      );
+      assert_eq!(value, $expected);
+      assert_eq!(defaults.get(), $default_calls);
+      assert_eq!(mappers.get(), $mapper_calls);
+    }};
+  }
+
+  check!(Left::<i32, i32, i32>(1), map_left_or, 10, 1, 1);
+  check!(Middle::<i32, i32, i32>(2), map_left_or, -1, 1, 0);
+  check!(Right::<i32, i32, i32>(3), map_left_or, -1, 1, 0);
+
+  check!(Left::<i32, i32, i32>(1), map_middle_or, -1, 1, 0);
+  check!(Middle::<i32, i32, i32>(2), map_middle_or, 20, 1, 1);
+  check!(Right::<i32, i32, i32>(3), map_middle_or, -1, 1, 0);
+
+  check!(Left::<i32, i32, i32>(1), map_right_or, -1, 1, 0);
+  check!(Middle::<i32, i32, i32>(2), map_right_or, -1, 1, 0);
+  check!(Right::<i32, i32, i32>(3), map_right_or, 30, 1, 1);
+}
+
+#[test]
+fn map_or_else_methods_call_only_the_selected_closure() {
+  use std::cell::Cell;
+
+  macro_rules! check {
+    ($value:expr, $method:ident, $expected:expr, $default_calls:expr, $mapper_calls:expr) => {{
+      let defaults = Cell::new(0);
+      let mappers = Cell::new(0);
+      let value = ($value).$method(
+        || {
+          defaults.set(defaults.get() + 1);
+          -1
+        },
+        |payload| {
+          mappers.set(mappers.get() + 1);
+          payload * 10
+        },
+      );
+      assert_eq!(value, $expected);
+      assert_eq!(defaults.get(), $default_calls);
+      assert_eq!(mappers.get(), $mapper_calls);
+    }};
+  }
+
+  check!(Left::<i32, i32, i32>(1), map_left_or_else, 10, 0, 1);
+  check!(Middle::<i32, i32, i32>(2), map_left_or_else, -1, 1, 0);
+  check!(Right::<i32, i32, i32>(3), map_left_or_else, -1, 1, 0);
+
+  check!(Left::<i32, i32, i32>(1), map_middle_or_else, -1, 1, 0);
+  check!(Middle::<i32, i32, i32>(2), map_middle_or_else, 20, 0, 1);
+  check!(Right::<i32, i32, i32>(3), map_middle_or_else, -1, 1, 0);
+
+  check!(Left::<i32, i32, i32>(1), map_right_or_else, -1, 1, 0);
+  check!(Middle::<i32, i32, i32>(2), map_right_or_else, -1, 1, 0);
+  check!(Right::<i32, i32, i32>(3), map_right_or_else, 30, 0, 1);
 }
 
 #[test]
@@ -1106,6 +1394,105 @@ fn into_among_branches() {
   assert_eq!((-1).into_among_with(classify), Right(-1));
 }
 
+#[test]
+fn try_variant_macros_convert_residuals_and_evaluate_once() {
+  use among as renamed;
+  use std::cell::Cell;
+
+  #[derive(Debug, PartialEq)]
+  struct SourceLeft(&'static str);
+  #[derive(Debug, PartialEq)]
+  struct SourceMiddle(&'static str);
+  #[derive(Debug, PartialEq)]
+  struct SourceRight(&'static str);
+  #[derive(Debug, PartialEq)]
+  struct TargetLeft(String);
+  #[derive(Debug, PartialEq)]
+  struct TargetMiddle(String);
+  #[derive(Debug, PartialEq)]
+  struct TargetRight(String);
+
+  impl From<SourceLeft> for TargetLeft {
+    fn from(value: SourceLeft) -> Self {
+      Self(format!("left:{}", value.0))
+    }
+  }
+
+  impl From<SourceMiddle> for TargetMiddle {
+    fn from(value: SourceMiddle) -> Self {
+      Self(format!("middle:{}", value.0))
+    }
+  }
+
+  impl From<SourceRight> for TargetRight {
+    fn from(value: SourceRight) -> Self {
+      Self(format!("right:{}", value.0))
+    }
+  }
+
+  fn extract_left(
+    value: renamed::Among<u32, SourceMiddle, SourceRight>,
+  ) -> renamed::Among<u32, TargetMiddle, TargetRight> {
+    let value = renamed::try_left!(value,);
+    renamed::Left(value * 2)
+  }
+
+  fn extract_middle(
+    value: renamed::Among<SourceLeft, u32, SourceRight>,
+  ) -> renamed::Among<TargetLeft, u32, TargetRight> {
+    let value = renamed::try_middle!(value,);
+    renamed::Middle(value * 2)
+  }
+
+  fn extract_right(
+    value: renamed::Among<SourceLeft, SourceMiddle, u32>,
+  ) -> renamed::Among<TargetLeft, TargetMiddle, u32> {
+    let value = renamed::try_right!(value,);
+    renamed::Right(value * 2)
+  }
+
+  assert_eq!(extract_left(renamed::Left(2)), renamed::Left(4));
+  assert_eq!(
+    extract_left(renamed::Middle(SourceMiddle("m"))),
+    renamed::Middle(TargetMiddle("middle:m".to_owned()))
+  );
+  assert_eq!(
+    extract_left(renamed::Right(SourceRight("r"))),
+    renamed::Right(TargetRight("right:r".to_owned()))
+  );
+
+  assert_eq!(extract_middle(renamed::Middle(3)), renamed::Middle(6));
+  assert_eq!(
+    extract_middle(renamed::Left(SourceLeft("l"))),
+    renamed::Left(TargetLeft("left:l".to_owned()))
+  );
+  assert_eq!(
+    extract_middle(renamed::Right(SourceRight("r"))),
+    renamed::Right(TargetRight("right:r".to_owned()))
+  );
+
+  assert_eq!(extract_right(renamed::Right(4)), renamed::Right(8));
+  assert_eq!(
+    extract_right(renamed::Left(SourceLeft("l"))),
+    renamed::Left(TargetLeft("left:l".to_owned()))
+  );
+  assert_eq!(
+    extract_right(renamed::Middle(SourceMiddle("m"))),
+    renamed::Middle(TargetMiddle("middle:m".to_owned()))
+  );
+
+  let evaluations = Cell::new(0);
+  let result = (|| -> renamed::Among<u32, TargetMiddle, TargetRight> {
+    let value = renamed::try_left!({
+      evaluations.set(evaluations.get() + 1);
+      renamed::Left::<u32, SourceMiddle, SourceRight>(5)
+    },);
+    renamed::Left(value)
+  })();
+  assert_eq!(result, renamed::Left(5));
+  assert_eq!(evaluations.get(), 1);
+}
+
 // --- Iterator / DoubleEndedIterator / ExactSize / IterAmong ---------------
 
 #[test]
@@ -1382,33 +1769,24 @@ fn future_impl_polls_each_variant() {
   let waker = noop_waker();
   let mut cx = Context::from_waker(&waker);
 
-  let mut fut: Among<
-    core::future::Ready<u8>,
-    core::future::Ready<&str>,
-    core::future::Ready<bool>,
-  > = Left(ready(1u8));
+  let fut: Among<core::future::Ready<u8>, core::future::Ready<&str>, core::future::Ready<bool>> =
+    Left(ready(1u8));
   let pinned = core::pin::pin!(fut);
   match pinned.poll(&mut cx) {
     Poll::Ready(v) => assert_eq!(v, Left(1u8)),
     Poll::Pending => panic!(),
   }
 
-  let mut fut: Among<
-    core::future::Ready<u8>,
-    core::future::Ready<&str>,
-    core::future::Ready<bool>,
-  > = Middle(ready("middle"));
+  let fut: Among<core::future::Ready<u8>, core::future::Ready<&str>, core::future::Ready<bool>> =
+    Middle(ready("middle"));
   let pinned = core::pin::pin!(fut);
   match pinned.poll(&mut cx) {
     Poll::Ready(v) => assert_eq!(v, Middle("middle")),
     Poll::Pending => panic!(),
   }
 
-  let mut fut: Among<
-    core::future::Ready<u8>,
-    core::future::Ready<&str>,
-    core::future::Ready<bool>,
-  > = Right(ready(true));
+  let fut: Among<core::future::Ready<u8>, core::future::Ready<&str>, core::future::Ready<bool>> =
+    Right(ready(true));
   let pinned = core::pin::pin!(fut);
   match pinned.poll(&mut cx) {
     Poll::Ready(v) => assert_eq!(v, Right(true)),
