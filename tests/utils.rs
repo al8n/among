@@ -3,6 +3,27 @@
 
 use among::{Among, IntoAmong, IterAmong, Left, Middle, Right};
 
+std::thread_local! {
+  static DEFAULT_CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+struct CountedDefault;
+
+impl Default for CountedDefault {
+  fn default() -> Self {
+    DEFAULT_CALLS.with(|calls| calls.set(calls.get() + 1));
+    Self
+  }
+}
+
+fn reset_default_calls() {
+  DEFAULT_CALLS.with(|calls| calls.set(0));
+}
+
+fn default_calls() -> usize {
+  DEFAULT_CALLS.with(std::cell::Cell::get)
+}
+
 // --- Construction / accessors / clone -------------------------------------
 
 #[test]
@@ -139,32 +160,35 @@ fn expect_right_on_middle() {
 
 #[test]
 fn factor_first_second_all_variants() {
-  let l: Among<(u32, i32), (u32, &str), (u32, bool)> = Left((1, 2));
+  type FactorFirst = Among<(u32, i32), (u32, &'static str), (u32, bool)>;
+  type FactorSecond = Among<(i32, u32), (&'static str, u32), (bool, u32)>;
+
+  let l: FactorFirst = Left((1, 2));
   let (t, rest) = l.factor_first();
   assert_eq!(t, 1);
   assert_eq!(rest, Left(2));
 
-  let m: Among<(u32, i32), (u32, &str), (u32, bool)> = Middle((2, "x"));
+  let m: FactorFirst = Middle((2, "x"));
   let (t, rest) = m.factor_first();
   assert_eq!(t, 2);
   assert_eq!(rest, Middle("x"));
 
-  let r: Among<(u32, i32), (u32, &str), (u32, bool)> = Right((3, true));
+  let r: FactorFirst = Right((3, true));
   let (t, rest) = r.factor_first();
   assert_eq!(t, 3);
   assert_eq!(rest, Right(true));
 
-  let l: Among<(i32, u32), (&str, u32), (bool, u32)> = Left((2, 1));
+  let l: FactorSecond = Left((2, 1));
   let (rest, t) = l.factor_second();
   assert_eq!(t, 1);
   assert_eq!(rest, Left(2));
 
-  let m: Among<(i32, u32), (&str, u32), (bool, u32)> = Middle(("x", 2));
+  let m: FactorSecond = Middle(("x", 2));
   let (rest, t) = m.factor_second();
   assert_eq!(t, 2);
   assert_eq!(rest, Middle("x"));
 
-  let r: Among<(i32, u32), (&str, u32), (bool, u32)> = Right((true, 3));
+  let r: FactorSecond = Right((true, 3));
   let (rest, t) = r.factor_second();
   assert_eq!(t, 3);
   assert_eq!(rest, Right(true));
@@ -190,37 +214,43 @@ fn factor_none_all_variants() {
 
 #[test]
 fn factor_err_all_variants() {
-  let l: Among<Result<i32, &str>, Result<i32, &str>, Result<i32, &str>> = Left(Ok(1));
+  type ResultAmong =
+    Among<Result<i32, &'static str>, Result<i32, &'static str>, Result<i32, &'static str>>;
+
+  let l: ResultAmong = Left(Ok(1));
   assert_eq!(l.factor_err(), Ok(Left(1)));
-  let l: Among<Result<i32, &str>, Result<i32, &str>, Result<i32, &str>> = Left(Err("e"));
+  let l: ResultAmong = Left(Err("e"));
   assert_eq!(l.factor_err(), Err("e"));
 
-  let m: Among<Result<i32, &str>, Result<i32, &str>, Result<i32, &str>> = Middle(Ok(2));
+  let m: ResultAmong = Middle(Ok(2));
   assert_eq!(m.factor_err(), Ok(Middle(2)));
-  let m: Among<Result<i32, &str>, Result<i32, &str>, Result<i32, &str>> = Middle(Err("e"));
+  let m: ResultAmong = Middle(Err("e"));
   assert_eq!(m.factor_err(), Err("e"));
 
-  let r: Among<Result<i32, &str>, Result<i32, &str>, Result<i32, &str>> = Right(Ok(3));
+  let r: ResultAmong = Right(Ok(3));
   assert_eq!(r.factor_err(), Ok(Right(3)));
-  let r: Among<Result<i32, &str>, Result<i32, &str>, Result<i32, &str>> = Right(Err("e"));
+  let r: ResultAmong = Right(Err("e"));
   assert_eq!(r.factor_err(), Err("e"));
 }
 
 #[test]
 fn factor_ok_all_variants() {
-  let l: Among<Result<i32, &str>, Result<i32, &str>, Result<i32, &str>> = Left(Ok(1));
+  type ResultAmong =
+    Among<Result<i32, &'static str>, Result<i32, &'static str>, Result<i32, &'static str>>;
+
+  let l: ResultAmong = Left(Ok(1));
   assert_eq!(l.factor_ok(), Ok(1));
-  let l: Among<Result<i32, &str>, Result<i32, &str>, Result<i32, &str>> = Left(Err("e"));
+  let l: ResultAmong = Left(Err("e"));
   assert_eq!(l.factor_ok(), Err(Left("e")));
 
-  let m: Among<Result<i32, &str>, Result<i32, &str>, Result<i32, &str>> = Middle(Ok(2));
+  let m: ResultAmong = Middle(Ok(2));
   assert_eq!(m.factor_ok(), Ok(2));
-  let m: Among<Result<i32, &str>, Result<i32, &str>, Result<i32, &str>> = Middle(Err("e"));
+  let m: ResultAmong = Middle(Err("e"));
   assert_eq!(m.factor_ok(), Err(Middle("e")));
 
-  let r: Among<Result<i32, &str>, Result<i32, &str>, Result<i32, &str>> = Right(Ok(3));
+  let r: ResultAmong = Right(Ok(3));
   assert_eq!(r.factor_ok(), Ok(3));
-  let r: Among<Result<i32, &str>, Result<i32, &str>, Result<i32, &str>> = Right(Err("e"));
+  let r: ResultAmong = Right(Err("e"));
   assert_eq!(r.factor_ok(), Err(Right("e")));
 }
 
@@ -290,6 +320,83 @@ fn insert_methods() {
 }
 
 #[test]
+fn replace_methods_return_each_displaced_non_copy_variant() {
+  macro_rules! check {
+    ($before:expr, $method:ident, $replacement:expr, $displaced:expr, $installed:expr) => {{
+      let mut value = $before;
+      assert_eq!(value.$method($replacement), $displaced);
+      assert_eq!(value, $installed);
+    }};
+  }
+
+  check!(
+    Left::<String, String, String>("left".to_owned()),
+    replace_left,
+    "new-left".to_owned(),
+    Left("left".to_owned()),
+    Left("new-left".to_owned())
+  );
+  check!(
+    Middle::<String, String, String>("middle".to_owned()),
+    replace_left,
+    "new-left".to_owned(),
+    Middle("middle".to_owned()),
+    Left("new-left".to_owned())
+  );
+  check!(
+    Right::<String, String, String>("right".to_owned()),
+    replace_left,
+    "new-left".to_owned(),
+    Right("right".to_owned()),
+    Left("new-left".to_owned())
+  );
+
+  check!(
+    Left::<String, String, String>("left".to_owned()),
+    replace_middle,
+    "new-middle".to_owned(),
+    Left("left".to_owned()),
+    Middle("new-middle".to_owned())
+  );
+  check!(
+    Middle::<String, String, String>("middle".to_owned()),
+    replace_middle,
+    "new-middle".to_owned(),
+    Middle("middle".to_owned()),
+    Middle("new-middle".to_owned())
+  );
+  check!(
+    Right::<String, String, String>("right".to_owned()),
+    replace_middle,
+    "new-middle".to_owned(),
+    Right("right".to_owned()),
+    Middle("new-middle".to_owned())
+  );
+
+  check!(
+    Left::<String, String, String>("left".to_owned()),
+    replace_right,
+    "new-right".to_owned(),
+    Left("left".to_owned()),
+    Right("new-right".to_owned())
+  );
+  check!(
+    Middle::<String, String, String>("middle".to_owned()),
+    replace_right,
+    "new-right".to_owned(),
+    Middle("middle".to_owned()),
+    Right("new-right".to_owned())
+  );
+  check!(
+    Right::<String, String, String>("right".to_owned()),
+    replace_right,
+    "new-right".to_owned(),
+    Right("right".to_owned()),
+    Right("new-right".to_owned())
+  );
+}
+
+#[test]
 fn get_or_insert_methods() {
   let mut a: Among<u32, u32, u32> = Right(1);
   let l = a.get_or_insert_left(7);
@@ -330,6 +437,122 @@ fn get_or_insert_methods() {
   let r = a.get_or_insert_right_with(|| 42);
   *r += 1;
   assert_eq!(a, Right(43));
+}
+
+#[test]
+fn get_or_insert_default_methods_defer_default_construction() {
+  type Value = Among<CountedDefault, CountedDefault, CountedDefault>;
+
+  let mut value: Value = Left(CountedDefault);
+  reset_default_calls();
+  let _ = value.get_or_insert_left_default();
+  assert_eq!(default_calls(), 0);
+  assert!(matches!(value, Left(_)));
+
+  let mut value: Value = Middle(CountedDefault);
+  reset_default_calls();
+  let _ = value.get_or_insert_left_default();
+  assert_eq!(default_calls(), 1);
+  assert!(matches!(value, Left(_)));
+
+  let mut value: Value = Right(CountedDefault);
+  reset_default_calls();
+  let _ = value.get_or_insert_left_default();
+  assert_eq!(default_calls(), 1);
+  assert!(matches!(value, Left(_)));
+
+  let mut value: Value = Left(CountedDefault);
+  reset_default_calls();
+  let _ = value.get_or_insert_middle_default();
+  assert_eq!(default_calls(), 1);
+  assert!(matches!(value, Middle(_)));
+
+  let mut value: Value = Middle(CountedDefault);
+  reset_default_calls();
+  let _ = value.get_or_insert_middle_default();
+  assert_eq!(default_calls(), 0);
+  assert!(matches!(value, Middle(_)));
+
+  let mut value: Value = Right(CountedDefault);
+  reset_default_calls();
+  let _ = value.get_or_insert_middle_default();
+  assert_eq!(default_calls(), 1);
+  assert!(matches!(value, Middle(_)));
+
+  let mut value: Value = Left(CountedDefault);
+  reset_default_calls();
+  let _ = value.get_or_insert_right_default();
+  assert_eq!(default_calls(), 1);
+  assert!(matches!(value, Right(_)));
+
+  let mut value: Value = Middle(CountedDefault);
+  reset_default_calls();
+  let _ = value.get_or_insert_right_default();
+  assert_eq!(default_calls(), 1);
+  assert!(matches!(value, Right(_)));
+
+  let mut value: Value = Right(CountedDefault);
+  reset_default_calls();
+  let _ = value.get_or_insert_right_default();
+  assert_eq!(default_calls(), 0);
+  assert!(matches!(value, Right(_)));
+}
+
+#[test]
+fn try_into_variant_methods_preserve_mismatches_exactly() {
+  macro_rules! check {
+    ($value:expr, $method:ident, $expected:expr) => {{
+      assert_eq!($value.$method(), $expected);
+    }};
+  }
+
+  check!(
+    Left::<String, String, String>("left".to_owned()),
+    try_into_left,
+    Ok("left".to_owned())
+  );
+  check!(
+    Middle::<String, String, String>("middle".to_owned()),
+    try_into_left,
+    Err(Middle("middle".to_owned()))
+  );
+  check!(
+    Right::<String, String, String>("right".to_owned()),
+    try_into_left,
+    Err(Right("right".to_owned()))
+  );
+
+  check!(
+    Left::<String, String, String>("left".to_owned()),
+    try_into_middle,
+    Err(Left("left".to_owned()))
+  );
+  check!(
+    Middle::<String, String, String>("middle".to_owned()),
+    try_into_middle,
+    Ok("middle".to_owned())
+  );
+  check!(
+    Right::<String, String, String>("right".to_owned()),
+    try_into_middle,
+    Err(Right("right".to_owned()))
+  );
+
+  check!(
+    Left::<String, String, String>("left".to_owned()),
+    try_into_right,
+    Err(Left("left".to_owned()))
+  );
+  check!(
+    Middle::<String, String, String>("middle".to_owned()),
+    try_into_right,
+    Err(Middle("middle".to_owned()))
+  );
+  check!(
+    Right::<String, String, String>("right".to_owned()),
+    try_into_right,
+    Ok("right".to_owned())
+  );
 }
 
 #[test]
@@ -455,6 +678,80 @@ fn map_left_middle_right_all() {
 }
 
 #[test]
+fn map_or_methods_cover_all_variants_and_eager_defaults() {
+  use std::cell::Cell;
+
+  macro_rules! check {
+    ($value:expr, $method:ident, $expected:expr, $default_calls:expr, $mapper_calls:expr) => {{
+      let defaults = Cell::new(0);
+      let mappers = Cell::new(0);
+      let value = ($value).$method(
+        {
+          defaults.set(defaults.get() + 1);
+          -1
+        },
+        |payload| {
+          mappers.set(mappers.get() + 1);
+          payload * 10
+        },
+      );
+      assert_eq!(value, $expected);
+      assert_eq!(defaults.get(), $default_calls);
+      assert_eq!(mappers.get(), $mapper_calls);
+    }};
+  }
+
+  check!(Left::<i32, i32, i32>(1), map_left_or, 10, 1, 1);
+  check!(Middle::<i32, i32, i32>(2), map_left_or, -1, 1, 0);
+  check!(Right::<i32, i32, i32>(3), map_left_or, -1, 1, 0);
+
+  check!(Left::<i32, i32, i32>(1), map_middle_or, -1, 1, 0);
+  check!(Middle::<i32, i32, i32>(2), map_middle_or, 20, 1, 1);
+  check!(Right::<i32, i32, i32>(3), map_middle_or, -1, 1, 0);
+
+  check!(Left::<i32, i32, i32>(1), map_right_or, -1, 1, 0);
+  check!(Middle::<i32, i32, i32>(2), map_right_or, -1, 1, 0);
+  check!(Right::<i32, i32, i32>(3), map_right_or, 30, 1, 1);
+}
+
+#[test]
+fn map_or_else_methods_call_only_the_selected_closure() {
+  use std::cell::Cell;
+
+  macro_rules! check {
+    ($value:expr, $method:ident, $expected:expr, $default_calls:expr, $mapper_calls:expr) => {{
+      let defaults = Cell::new(0);
+      let mappers = Cell::new(0);
+      let value = ($value).$method(
+        || {
+          defaults.set(defaults.get() + 1);
+          -1
+        },
+        |payload| {
+          mappers.set(mappers.get() + 1);
+          payload * 10
+        },
+      );
+      assert_eq!(value, $expected);
+      assert_eq!(defaults.get(), $default_calls);
+      assert_eq!(mappers.get(), $mapper_calls);
+    }};
+  }
+
+  check!(Left::<i32, i32, i32>(1), map_left_or_else, 10, 0, 1);
+  check!(Middle::<i32, i32, i32>(2), map_left_or_else, -1, 1, 0);
+  check!(Right::<i32, i32, i32>(3), map_left_or_else, -1, 1, 0);
+
+  check!(Left::<i32, i32, i32>(1), map_middle_or_else, -1, 1, 0);
+  check!(Middle::<i32, i32, i32>(2), map_middle_or_else, 20, 0, 1);
+  check!(Right::<i32, i32, i32>(3), map_middle_or_else, -1, 1, 0);
+
+  check!(Left::<i32, i32, i32>(1), map_right_or_else, -1, 1, 0);
+  check!(Middle::<i32, i32, i32>(2), map_right_or_else, -1, 1, 0);
+  check!(Right::<i32, i32, i32>(3), map_right_or_else, 30, 0, 1);
+}
+
+#[test]
 fn left_and_then_others_pass_through() {
   let m: Among<i32, i32, i32> = Middle(2);
   assert_eq!(
@@ -503,6 +800,102 @@ fn inspect_methods_no_call() {
   let _ = m.inspect_right(|_| panic!("not called"));
 }
 
+#[test]
+fn consuming_predicates_accept_move_only_values() {
+  struct MoveOnly(&'static str);
+
+  let left = Left::<MoveOnly, MoveOnly, MoveOnly>(MoveOnly("left"));
+  assert!(left.is_left_and(|value| value.0 == "left"));
+
+  let middle = Middle::<MoveOnly, MoveOnly, MoveOnly>(MoveOnly("middle"));
+  assert!(middle.is_middle_and(|value| value.0 == "middle"));
+
+  let right = Right::<MoveOnly, MoveOnly, MoveOnly>(MoveOnly("right"));
+  assert!(right.is_right_and(|value| value.0 == "right"));
+}
+
+#[test]
+fn consuming_predicates_skip_nonmatching_variants_and_as_ref_preserves_borrows() {
+  let middle = Middle::<String, String, String>("middle".to_owned());
+  assert!(!middle.is_left_and(|_| panic!("predicate must not be called")));
+
+  let left = Left::<String, String, String>("left".to_owned());
+  assert!(left.as_ref().is_left_and(|value| value.len() == 4));
+  assert_eq!(left, Left("left".to_owned()));
+}
+
+#[test]
+fn left_or_else_uses_middle_then_right_closure_order() {
+  let middle: Among<String, u16, bool> = Middle(12);
+  assert_eq!(
+    middle.left_or_else(
+      |value| format!("middle-{value}"),
+      |value| format!("right-{value}")
+    ),
+    "middle-12"
+  );
+
+  let right: Among<String, u16, bool> = Right(true);
+  assert_eq!(
+    right.left_or_else(
+      |value| format!("middle-{value}"),
+      |value| format!("right-{value}")
+    ),
+    "right-true"
+  );
+}
+
+#[test]
+fn eager_and_methods_replace_only_the_selected_variant() {
+  let left: Among<u8, &str, bool> = Left(1);
+  assert_eq!(
+    left.left_and(Left::<String, &str, bool>("selected".to_owned())),
+    Left("selected".to_owned())
+  );
+  let middle: Among<u8, &str, bool> = Middle("middle");
+  assert_eq!(
+    middle.left_and(Left::<String, &str, bool>("selected".to_owned())),
+    Middle("middle")
+  );
+  let right: Among<u8, &str, bool> = Right(true);
+  assert_eq!(
+    right.left_and(Left::<String, &str, bool>("selected".to_owned())),
+    Right(true)
+  );
+
+  let left: Among<&str, u8, bool> = Left("left");
+  assert_eq!(
+    left.middle_and(Middle::<&str, String, bool>("selected".to_owned())),
+    Left("left")
+  );
+  let middle: Among<&str, u8, bool> = Middle(2);
+  assert_eq!(
+    middle.middle_and(Middle::<&str, String, bool>("selected".to_owned())),
+    Middle("selected".to_owned())
+  );
+  let right: Among<&str, u8, bool> = Right(true);
+  assert_eq!(
+    right.middle_and(Middle::<&str, String, bool>("selected".to_owned())),
+    Right(true)
+  );
+
+  let left: Among<&str, bool, u8> = Left("left");
+  assert_eq!(
+    left.right_and(Right::<&str, bool, String>("selected".to_owned())),
+    Left("left")
+  );
+  let middle: Among<&str, bool, u8> = Middle(true);
+  assert_eq!(
+    middle.right_and(Right::<&str, bool, String>("selected".to_owned())),
+    Middle(true)
+  );
+  let right: Among<&str, bool, u8> = Right(3);
+  assert_eq!(
+    right.right_and(Right::<&str, bool, String>("selected".to_owned())),
+    Right("selected".to_owned())
+  );
+}
+
 // --- Display, Debug, Hash, Ord -------------------------------------------
 
 #[test]
@@ -514,6 +907,52 @@ fn display_impl() {
   assert_eq!(m.to_string(), "hi");
   let r: Among<i32, &str, bool> = Right(true);
   assert_eq!(r.to_string(), "true");
+}
+
+#[test]
+fn formatter_traits_and_fmt_write_forward_to_the_active_variant() {
+  let value: Among<u32, u32, u32> = Middle(0xC0DE);
+  assert_eq!(format!("{value:b}"), "1100000011011110");
+  assert_eq!(format!("{value:e}"), "4.9374e4");
+  assert_eq!(format!("{value:x}"), "c0de");
+  assert_eq!(format!("{value:o}"), "140336");
+  assert_eq!(format!("{value:E}"), "4.9374E4");
+  assert_eq!(format!("{value:X}"), "C0DE");
+
+  let pointer: Among<*const u32, *const u32, *const u32> = Right(core::ptr::null());
+  assert_eq!(format!("{pointer:p}"), "0x0");
+
+  let mut left: Among<String, String, String> = Left(String::new());
+  core::fmt::Write::write_str(&mut left, "left").unwrap();
+  assert_eq!(left, Left("left".to_owned()));
+
+  let mut middle: Among<String, String, String> = Middle(String::new());
+  core::fmt::Write::write_char(&mut middle, 'm').unwrap();
+  assert_eq!(middle, Middle("m".to_owned()));
+
+  let mut right: Among<String, String, String> = Right(String::new());
+  core::fmt::Write::write_fmt(&mut right, format_args!("{}{}", "right", '!')).unwrap();
+  assert_eq!(right, Right("right!".to_owned()));
+}
+
+#[test]
+fn error_impl_is_available_through_core() {
+  use core::fmt;
+
+  #[derive(Debug)]
+  struct Error;
+
+  impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+      f.write_str("error")
+    }
+  }
+
+  impl core::error::Error for Error {}
+
+  fn assert_error<T: core::error::Error>() {}
+
+  assert_error::<Among<Error, Error, Error>>();
 }
 
 #[cfg(feature = "std")]
@@ -626,6 +1065,39 @@ fn as_ref_and_as_mut_target_impls() {
   assert_eq!(vec_ref(&r), &vec![1u8]);
 }
 
+#[test]
+fn as_deref_and_as_deref_mut_preserve_heterogeneous_variants() {
+  type Value = Among<String, Vec<u8>, Box<[u16]>>;
+
+  let left: Value = Left("left".to_owned());
+  assert_eq!(left.as_deref(), Left("left"));
+  let middle: Value = Middle(vec![1, 2]);
+  assert_eq!(middle.as_deref(), Middle(&[1, 2][..]));
+  let right: Value = Right(vec![3, 4].into_boxed_slice());
+  assert_eq!(right.as_deref(), Right(&[3, 4][..]));
+
+  let mut left: Value = Left("left".to_owned());
+  match left.as_deref_mut() {
+    Left(value) => value.make_ascii_uppercase(),
+    _ => panic!("unexpected variant"),
+  }
+  assert_eq!(left, Left("LEFT".to_owned()));
+
+  let mut middle: Value = Middle(vec![1, 2]);
+  match middle.as_deref_mut() {
+    Middle(value) => value[0] = 9,
+    _ => panic!("unexpected variant"),
+  }
+  assert_eq!(middle, Middle(vec![9, 2]));
+
+  let mut right: Value = Right(vec![3, 4].into_boxed_slice());
+  match right.as_deref_mut() {
+    Right(value) => value[1] = 8,
+    _ => panic!("unexpected variant"),
+  }
+  assert_eq!(right, Right(vec![3, 8].into_boxed_slice()));
+}
+
 #[cfg(feature = "std")]
 #[test]
 fn as_ref_path_osstr_cstr_impls() {
@@ -673,17 +1145,17 @@ fn as_ref_path_osstr_cstr_impls() {
 fn deref_mut_works() {
   use std::string::String;
   let mut a: Among<String, String, String> = Left("hi".to_string());
-  let r: &mut str = &mut *a;
+  let r: &mut str = &mut a;
   r.make_ascii_uppercase();
   assert_eq!(a, Left("HI".to_string()));
 
   let mut a: Among<String, String, String> = Middle("hi".to_string());
-  let r: &mut str = &mut *a;
+  let r: &mut str = &mut a;
   r.make_ascii_uppercase();
   assert_eq!(a, Middle("HI".to_string()));
 
   let mut a: Among<String, String, String> = Right("hi".to_string());
-  let r: &mut str = &mut *a;
+  let r: &mut str = &mut a;
   r.make_ascii_uppercase();
   assert_eq!(a, Right("HI".to_string()));
 }
@@ -692,6 +1164,8 @@ fn deref_mut_works() {
 #[test]
 fn bufread_impl() {
   use std::io::{BufRead, Cursor};
+
+  type CursorAmong = Among<Cursor<&'static [u8]>, Cursor<&'static [u8]>, Cursor<&'static [u8]>>;
 
   fn run<T: BufRead>(mut r: T) {
     let mut s = String::new();
@@ -702,11 +1176,11 @@ fn bufread_impl() {
     r.consume(0);
   }
 
-  let l: Among<Cursor<&[u8]>, Cursor<&[u8]>, Cursor<&[u8]>> = Left(Cursor::new(b"hello\nworld\n"));
+  let l: CursorAmong = Left(Cursor::new(b"hello\nworld\n"));
   run(l);
-  let m: Among<Cursor<&[u8]>, Cursor<&[u8]>, Cursor<&[u8]>> = Middle(Cursor::new(b"hi\nthere\n"));
+  let m: CursorAmong = Middle(Cursor::new(b"hi\nthere\n"));
   run(m);
-  let r: Among<Cursor<&[u8]>, Cursor<&[u8]>, Cursor<&[u8]>> = Right(Cursor::new(b"a\nb\n"));
+  let r: CursorAmong = Right(Cursor::new(b"a\nb\n"));
   run(r);
 }
 
@@ -714,6 +1188,9 @@ fn bufread_impl() {
 #[test]
 fn write_and_read_extras() {
   use std::io::{Read, Seek, SeekFrom, Write};
+
+  type CursorAmong =
+    Among<std::io::Cursor<Vec<u8>>, std::io::Cursor<Vec<u8>>, std::io::Cursor<Vec<u8>>>;
 
   // Read variants: read_exact, read_to_end, read_to_string
   let data = b"abc";
@@ -734,12 +1211,10 @@ fn write_and_read_extras() {
 
   // Seek for Middle and Left variants
   let mut buf = std::io::Cursor::new(vec![0u8; 4]);
-  let mut a: Among<std::io::Cursor<Vec<u8>>, std::io::Cursor<Vec<u8>>, std::io::Cursor<Vec<u8>>> =
-    Middle(buf.clone());
+  let mut a: CursorAmong = Middle(buf.clone());
   a.seek(SeekFrom::Start(2)).unwrap();
   let _ = buf.write_all(b"xx");
-  let mut a: Among<std::io::Cursor<Vec<u8>>, std::io::Cursor<Vec<u8>>, std::io::Cursor<Vec<u8>>> =
-    Left(buf.clone());
+  let mut a: CursorAmong = Left(buf.clone());
   a.seek(SeekFrom::Start(0)).unwrap();
 
   // Write methods on all variants
@@ -762,6 +1237,143 @@ fn write_and_read_extras() {
   let _ = w.write_fmt(format_args!("{}", 2));
 }
 
+#[cfg(feature = "std")]
+#[test]
+fn provided_io_methods_forward_directly_to_each_variant() {
+  use std::io::{self, BufRead, IoSlice, IoSliceMut, Read, Seek, SeekFrom, Write};
+
+  struct ReadProbe(usize);
+
+  impl Read for ReadProbe {
+    fn read(&mut self, _buf: &mut [u8]) -> io::Result<usize> {
+      panic!("read_vectored must not use read")
+    }
+
+    fn read_vectored(&mut self, _bufs: &mut [IoSliceMut<'_>]) -> io::Result<usize> {
+      Ok(self.0)
+    }
+  }
+
+  struct WriteProbe(usize);
+
+  impl Write for WriteProbe {
+    fn write(&mut self, _buf: &[u8]) -> io::Result<usize> {
+      panic!("write_vectored must not use write")
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+      Ok(())
+    }
+
+    fn write_vectored(&mut self, _bufs: &[IoSlice<'_>]) -> io::Result<usize> {
+      Ok(self.0)
+    }
+  }
+
+  struct BufReadProbe(usize);
+
+  impl Read for BufReadProbe {
+    fn read(&mut self, _buf: &mut [u8]) -> io::Result<usize> {
+      panic!("skip_until must not use read")
+    }
+  }
+
+  impl BufRead for BufReadProbe {
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
+      panic!("skip_until must not use fill_buf")
+    }
+
+    fn consume(&mut self, _amt: usize) {
+      panic!("skip_until must not use consume")
+    }
+
+    fn skip_until(&mut self, _byte: u8) -> io::Result<usize> {
+      Ok(self.0)
+    }
+  }
+
+  struct SeekProbe {
+    position: u64,
+    relative: Option<i64>,
+  }
+
+  impl Seek for SeekProbe {
+    fn seek(&mut self, _pos: SeekFrom) -> io::Result<u64> {
+      panic!("provided seek methods must not use seek")
+    }
+
+    fn rewind(&mut self) -> io::Result<()> {
+      self.position = 0;
+      Ok(())
+    }
+
+    fn stream_position(&mut self) -> io::Result<u64> {
+      Ok(self.position)
+    }
+
+    fn seek_relative(&mut self, offset: i64) -> io::Result<()> {
+      self.relative = Some(offset);
+      Ok(())
+    }
+  }
+
+  let mut storage = [0u8; 1];
+  let mut read_bufs = [IoSliceMut::new(&mut storage)];
+  let mut readers = [
+    Left(ReadProbe(11)),
+    Middle(ReadProbe(22)),
+    Right(ReadProbe(33)),
+  ];
+  for (reader, expected) in readers.iter_mut().zip([11, 22, 33]) {
+    assert_eq!(reader.read_vectored(&mut read_bufs).unwrap(), expected);
+  }
+
+  let write_bufs = [IoSlice::new(b"probe")];
+  let mut writers = [
+    Left(WriteProbe(44)),
+    Middle(WriteProbe(55)),
+    Right(WriteProbe(66)),
+  ];
+  for (writer, expected) in writers.iter_mut().zip([44, 55, 66]) {
+    assert_eq!(writer.write_vectored(&write_bufs).unwrap(), expected);
+  }
+
+  let mut buffered = [
+    Left(BufReadProbe(77)),
+    Middle(BufReadProbe(88)),
+    Right(BufReadProbe(99)),
+  ];
+  for (reader, expected) in buffered.iter_mut().zip([77, 88, 99]) {
+    assert_eq!(reader.skip_until(b'x').unwrap(), expected);
+  }
+
+  let mut seekers = [
+    Left(SeekProbe {
+      position: 101,
+      relative: None,
+    }),
+    Middle(SeekProbe {
+      position: 202,
+      relative: None,
+    }),
+    Right(SeekProbe {
+      position: 303,
+      relative: None,
+    }),
+  ];
+  for (seeker, (position, offset)) in seekers.iter_mut().zip([(101, -1), (202, -2), (303, -3)]) {
+    assert_eq!(seeker.stream_position().unwrap(), position);
+    seeker.rewind().unwrap();
+    seeker.seek_relative(offset).unwrap();
+    match seeker {
+      Left(probe) | Middle(probe) | Right(probe) => {
+        assert_eq!(probe.position, 0);
+        assert_eq!(probe.relative, Some(offset));
+      }
+    }
+  }
+}
+
 // --- IntoAmong ------------------------------------------------------------
 
 #[test]
@@ -771,17 +1383,114 @@ fn into_among_branches() {
   assert_eq!(5u8.into_among(None), Middle(5));
 
   fn classify(x: &i32) -> Option<bool> {
-    if *x > 0 {
-      Some(true)
-    } else if *x == 0 {
-      None
-    } else {
-      Some(false)
+    match (*x).cmp(&0) {
+      core::cmp::Ordering::Greater => Some(true),
+      core::cmp::Ordering::Equal => None,
+      core::cmp::Ordering::Less => Some(false),
     }
   }
   assert_eq!(1.into_among_with(classify), Left(1));
   assert_eq!(0.into_among_with(classify), Middle(0));
   assert_eq!((-1).into_among_with(classify), Right(-1));
+}
+
+#[test]
+fn try_variant_macros_convert_residuals_and_evaluate_once() {
+  use among as renamed;
+  use std::cell::Cell;
+
+  #[derive(Debug, PartialEq)]
+  struct SourceLeft(&'static str);
+  #[derive(Debug, PartialEq)]
+  struct SourceMiddle(&'static str);
+  #[derive(Debug, PartialEq)]
+  struct SourceRight(&'static str);
+  #[derive(Debug, PartialEq)]
+  struct TargetLeft(String);
+  #[derive(Debug, PartialEq)]
+  struct TargetMiddle(String);
+  #[derive(Debug, PartialEq)]
+  struct TargetRight(String);
+
+  impl From<SourceLeft> for TargetLeft {
+    fn from(value: SourceLeft) -> Self {
+      Self(format!("left:{}", value.0))
+    }
+  }
+
+  impl From<SourceMiddle> for TargetMiddle {
+    fn from(value: SourceMiddle) -> Self {
+      Self(format!("middle:{}", value.0))
+    }
+  }
+
+  impl From<SourceRight> for TargetRight {
+    fn from(value: SourceRight) -> Self {
+      Self(format!("right:{}", value.0))
+    }
+  }
+
+  fn extract_left(
+    value: renamed::Among<u32, SourceMiddle, SourceRight>,
+  ) -> renamed::Among<u32, TargetMiddle, TargetRight> {
+    let value = renamed::try_left!(value,);
+    renamed::Left(value * 2)
+  }
+
+  fn extract_middle(
+    value: renamed::Among<SourceLeft, u32, SourceRight>,
+  ) -> renamed::Among<TargetLeft, u32, TargetRight> {
+    let value = renamed::try_middle!(value,);
+    renamed::Middle(value * 2)
+  }
+
+  fn extract_right(
+    value: renamed::Among<SourceLeft, SourceMiddle, u32>,
+  ) -> renamed::Among<TargetLeft, TargetMiddle, u32> {
+    let value = renamed::try_right!(value,);
+    renamed::Right(value * 2)
+  }
+
+  assert_eq!(extract_left(renamed::Left(2)), renamed::Left(4));
+  assert_eq!(
+    extract_left(renamed::Middle(SourceMiddle("m"))),
+    renamed::Middle(TargetMiddle("middle:m".to_owned()))
+  );
+  assert_eq!(
+    extract_left(renamed::Right(SourceRight("r"))),
+    renamed::Right(TargetRight("right:r".to_owned()))
+  );
+
+  assert_eq!(extract_middle(renamed::Middle(3)), renamed::Middle(6));
+  assert_eq!(
+    extract_middle(renamed::Left(SourceLeft("l"))),
+    renamed::Left(TargetLeft("left:l".to_owned()))
+  );
+  assert_eq!(
+    extract_middle(renamed::Right(SourceRight("r"))),
+    renamed::Right(TargetRight("right:r".to_owned()))
+  );
+
+  assert_eq!(extract_right(renamed::Right(4)), renamed::Right(8));
+  assert_eq!(
+    extract_right(renamed::Left(SourceLeft("l"))),
+    renamed::Left(TargetLeft("left:l".to_owned()))
+  );
+  assert_eq!(
+    extract_right(renamed::Middle(SourceMiddle("m"))),
+    renamed::Middle(TargetMiddle("middle:m".to_owned()))
+  );
+
+  let evaluations = Cell::new(0);
+  let result = (|| -> renamed::Among<u32, TargetMiddle, TargetRight> {
+    let value = renamed::try_left!({
+      evaluations.set(evaluations.get() + 1);
+      renamed::Left::<u32, SourceMiddle, SourceRight>(5)
+    },);
+    renamed::Left(value)
+  })();
+  assert_eq!(result, renamed::Left(5));
+  assert_eq!(evaluations.get(), 1);
 }
 
 // --- Iterator / DoubleEndedIterator / ExactSize / IterAmong ---------------
@@ -811,7 +1520,9 @@ fn among_iterator_methods() {
     let it = builder(vec![1, 2, 3, 4]);
     assert_eq!(it.size_hint().0, 4);
     let it = builder(vec![1, 2, 3, 4]);
-    assert_eq!(it.fold(0, |a, x| a + x), 10);
+    #[allow(clippy::unnecessary_fold)]
+    let sum = it.fold(0, |a, x| a + x);
+    assert_eq!(sum, 10);
     let mut total = 0;
     builder(vec![1, 2, 3, 4]).for_each(|x| total += x);
     assert_eq!(total, 10);
@@ -919,6 +1630,7 @@ fn iter_among_iterator_methods() {
     let mut it = builder();
     let _ = it.find(|_| true);
     let mut it = builder();
+    #[allow(clippy::unnecessary_find_map)]
     let _ = it.find_map(|x| match x {
       Left(l) => Some(l),
       Middle(m) => Some(m),
@@ -1006,13 +1718,39 @@ fn extend_impl() {
   assert_eq!(a, Right(vec![4]));
 }
 
+#[test]
+fn tuple_extend_and_collect_partition_heterogeneous_among_values() {
+  let values = [
+    Left(1u8),
+    Middle("middle"),
+    Right(true),
+    Left(2u8),
+    Right(false),
+  ];
+  let collected: (Vec<u8>, Vec<&str>, Vec<bool>) = IntoIterator::into_iter(values).collect();
+  assert_eq!(collected.0, vec![1, 2]);
+  assert_eq!(collected.1, vec!["middle"]);
+  assert_eq!(collected.2, vec![true, false]);
+
+  let mut extended: (Vec<u16>, String, Vec<char>) = (Vec::new(), String::new(), Vec::new());
+  extended.extend([
+    Left(3u16),
+    Middle("middle"),
+    Right('r'),
+    Left(4u16),
+    Middle("!"),
+  ]);
+  assert_eq!(extended.0, vec![3, 4]);
+  assert_eq!(extended.1, "middle!");
+  assert_eq!(extended.2, vec!['r']);
+}
+
 // --- Future impl ----------------------------------------------------------
 
 #[test]
 fn future_impl_polls_each_variant() {
   use core::{
     future::Future,
-    pin::Pin,
     task::{Context, Poll, RawWaker, RawWakerVTable, Waker},
   };
 
@@ -1027,29 +1765,31 @@ fn future_impl_polls_each_variant() {
 
   use core::future::ready;
 
-  // Each variant has its own Future type with the same Output = i32.
+  // Each variant has its own Future type and output type.
   let waker = noop_waker();
   let mut cx = Context::from_waker(&waker);
 
-  let mut fut: Among<core::future::Ready<i32>, core::future::Ready<i32>, core::future::Ready<i32>> =
-    Left(ready(1i32));
-  let pinned = unsafe { Pin::new_unchecked(&mut fut) };
+  let fut: Among<core::future::Ready<u8>, core::future::Ready<&str>, core::future::Ready<bool>> =
+    Left(ready(1u8));
+  let pinned = core::pin::pin!(fut);
   match pinned.poll(&mut cx) {
-    Poll::Ready(v) => assert_eq!(v, Left(1)),
+    Poll::Ready(v) => assert_eq!(v, Left(1u8)),
     Poll::Pending => panic!(),
   }
 
-  let mut fut: Among<core::future::Ready<i32>, _, core::future::Ready<i32>> = Middle(ready(2i32));
-  let pinned = unsafe { Pin::new_unchecked(&mut fut) };
+  let fut: Among<core::future::Ready<u8>, core::future::Ready<&str>, core::future::Ready<bool>> =
+    Middle(ready("middle"));
+  let pinned = core::pin::pin!(fut);
   match pinned.poll(&mut cx) {
-    Poll::Ready(v) => assert_eq!(v, Middle(2)),
+    Poll::Ready(v) => assert_eq!(v, Middle("middle")),
     Poll::Pending => panic!(),
   }
 
-  let mut fut: Among<core::future::Ready<i32>, core::future::Ready<i32>, _> = Right(ready(3i32));
-  let pinned = unsafe { Pin::new_unchecked(&mut fut) };
+  let fut: Among<core::future::Ready<u8>, core::future::Ready<&str>, core::future::Ready<bool>> =
+    Right(ready(true));
+  let pinned = core::pin::pin!(fut);
   match pinned.poll(&mut cx) {
-    Poll::Ready(v) => assert_eq!(v, Right(3)),
+    Poll::Ready(v) => assert_eq!(v, Right(true)),
     Poll::Pending => panic!(),
   }
 }
@@ -1134,6 +1874,14 @@ mod either_feature {
   fn from_either_variants() {
     let a: Among<i32, (), i32> = Among::from_either_to_left_right(Either::Right(2));
     assert_eq!(a, Right(2));
+    let a: Among<i32, (), i32> = Among::from_either_to_left_right(Either::Left(1));
+    assert_eq!(a, Left(1));
+
+    let a: Among<i32, &str, ()> = Among::from_either_to_left_middle(Either::Right("middle"));
+    assert_eq!(a, Middle("middle"));
+
+    let a: Among<(), i32, &str> = Among::from_either_to_middle_right(Either::Left(2));
+    assert_eq!(a, Middle(2));
 
     let nested: Either<Either<i32, &str>, bool> = Either::Left(Either::Left(1));
     let a: Among<i32, &str, bool> = nested.into();
@@ -1155,13 +1903,16 @@ mod either_feature {
     let a: Among<i32, &str, bool> = nested.into();
     assert_eq!(a, Right(true));
 
-    // Plain Either<A, B> -> Among
-    let e: Either<i32, &str> = Either::Left(1);
-    let a: Among<i32, &str, ()> = e.into();
-    assert_eq!(a, Left(1));
-    let e: Either<i32, &str> = Either::Right("x");
-    let a: Among<i32, &str, ()> = e.into();
-    assert_eq!(a, Middle("x"));
+    let values: [Among<i32, &str, bool>; 3] = [Left(1), Middle("x"), Right(true)];
+    for value in values {
+      let nested: Either<Either<i32, &str>, bool> = value.into();
+      let round_trip: Among<i32, &str, bool> = nested.into();
+      assert_eq!(round_trip, value);
+
+      let nested: Either<i32, Either<&str, bool>> = value.into();
+      let round_trip: Among<i32, &str, bool> = nested.into();
+      assert_eq!(round_trip, value);
+    }
   }
 
   #[test]
@@ -1301,7 +2052,7 @@ mod futures_feature {
     task::{Context, Poll, RawWaker, RawWakerVTable, Waker},
   };
   use futures_io::{AsyncBufRead, AsyncRead, AsyncSeek, AsyncWrite};
-  use std::io::SeekFrom;
+  use std::io::{IoSlice, IoSliceMut, SeekFrom};
 
   fn noop_waker() -> Waker {
     fn clone(_: *const ()) -> RawWaker {
@@ -1433,6 +2184,89 @@ mod futures_feature {
       poll_all(Pin::new(&mut among), &mut cx);
     }
   }
+
+  struct VectoredProbe {
+    read: usize,
+    write: usize,
+  }
+
+  impl AsyncRead for VectoredProbe {
+    fn poll_read(
+      self: Pin<&mut Self>,
+      _cx: &mut Context<'_>,
+      _buf: &mut [u8],
+    ) -> Poll<std::io::Result<usize>> {
+      panic!("poll_read_vectored must not use poll_read")
+    }
+
+    fn poll_read_vectored(
+      self: Pin<&mut Self>,
+      _cx: &mut Context<'_>,
+      _bufs: &mut [IoSliceMut<'_>],
+    ) -> Poll<std::io::Result<usize>> {
+      Poll::Ready(Ok(self.read))
+    }
+  }
+
+  impl AsyncWrite for VectoredProbe {
+    fn poll_write(
+      self: Pin<&mut Self>,
+      _cx: &mut Context<'_>,
+      _buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+      panic!("poll_write_vectored must not use poll_write")
+    }
+
+    fn poll_write_vectored(
+      self: Pin<&mut Self>,
+      _cx: &mut Context<'_>,
+      _bufs: &[IoSlice<'_>],
+    ) -> Poll<std::io::Result<usize>> {
+      Poll::Ready(Ok(self.write))
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+      Poll::Ready(Ok(()))
+    }
+
+    fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+      Poll::Ready(Ok(()))
+    }
+  }
+
+  #[test]
+  fn futures_vectored_methods_forward_to_each_variant() {
+    let waker = noop_waker();
+    let mut cx = Context::from_waker(&waker);
+    let mut probes = [
+      Left(VectoredProbe {
+        read: 11,
+        write: 44,
+      }),
+      Middle(VectoredProbe {
+        read: 22,
+        write: 55,
+      }),
+      Right(VectoredProbe {
+        read: 33,
+        write: 66,
+      }),
+    ];
+    let mut storage = [0u8; 1];
+    let mut read_bufs = [IoSliceMut::new(&mut storage)];
+    let write_bufs = [IoSlice::new(b"probe")];
+
+    for (probe, (read, write)) in probes.iter_mut().zip([(11, 44), (22, 55), (33, 66)]) {
+      match AsyncRead::poll_read_vectored(Pin::new(probe), &mut cx, &mut read_bufs) {
+        Poll::Ready(Ok(value)) => assert_eq!(value, read),
+        _ => panic!("unexpected vectored read result"),
+      }
+      match AsyncWrite::poll_write_vectored(Pin::new(probe), &mut cx, &write_bufs) {
+        Poll::Ready(Ok(value)) => assert_eq!(value, write),
+        _ => panic!("unexpected vectored write result"),
+      }
+    }
+  }
 }
 
 // --- tokio feature --------------------------------------------------------
@@ -1444,7 +2278,7 @@ mod tokio_feature {
     pin::Pin,
     task::{Context, Poll, RawWaker, RawWakerVTable, Waker},
   };
-  use std::io::SeekFrom;
+  use std::io::{IoSlice, SeekFrom};
   use tokio::io::{AsyncBufRead, AsyncRead, AsyncSeek, AsyncWrite, ReadBuf};
 
   fn noop_waker() -> Waker {
@@ -1551,6 +2385,70 @@ mod tokio_feature {
       {
         let pinned = Pin::new(&mut among);
         let _ = AsyncSeek::poll_complete(pinned, &mut cx);
+      }
+    }
+  }
+
+  struct VectoredProbe {
+    write: usize,
+    vectored: bool,
+  }
+
+  impl AsyncWrite for VectoredProbe {
+    fn poll_write(
+      self: Pin<&mut Self>,
+      _cx: &mut Context<'_>,
+      _buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+      panic!("poll_write_vectored must not use poll_write")
+    }
+
+    fn poll_write_vectored(
+      self: Pin<&mut Self>,
+      _cx: &mut Context<'_>,
+      _bufs: &[IoSlice<'_>],
+    ) -> Poll<std::io::Result<usize>> {
+      Poll::Ready(Ok(self.write))
+    }
+
+    fn is_write_vectored(&self) -> bool {
+      self.vectored
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+      Poll::Ready(Ok(()))
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+      Poll::Ready(Ok(()))
+    }
+  }
+
+  #[test]
+  fn tokio_vectored_write_and_capability_forward_to_each_variant() {
+    let waker = noop_waker();
+    let mut cx = Context::from_waker(&waker);
+    let mut probes = [
+      Left(VectoredProbe {
+        write: 7,
+        vectored: true,
+      }),
+      Middle(VectoredProbe {
+        write: 8,
+        vectored: false,
+      }),
+      Right(VectoredProbe {
+        write: 9,
+        vectored: true,
+      }),
+    ];
+    let bufs = [IoSlice::new(b"probe")];
+
+    for (probe, (write, vectored)) in probes.iter_mut().zip([(7, true), (8, false), (9, true)]) {
+      assert_eq!(AsyncWrite::is_write_vectored(probe), vectored);
+      match AsyncWrite::poll_write_vectored(Pin::new(probe), &mut cx, &bufs) {
+        Poll::Ready(Ok(value)) => assert_eq!(value, write),
+        _ => panic!("unexpected vectored write result"),
       }
     }
   }

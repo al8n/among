@@ -1,3 +1,33 @@
+# 1.0.0-rc.1 (Unreleased)
+
+BREAKING
+
+- Make `is_left_and`, `is_middle_and`, and `is_right_and` consume `self` and pass their payloads by value. Borrow through `as_ref()` when needed.
+- Change `left_or_else` closure order to `Middle`, then `Right`, matching `Among`'s variant order.
+- Remove `From<Either<A, B>> for Among<A, B, C>`; retain the named two-way embeddings and complete nested `Either` conversions.
+- Seal the `AmongErrorExt`, `AmongOkExt`, `EitherOkExt`, and `EitherErrExt` extension traits.
+- Remove the previously implicit public `futures-io` feature. Downstream users must replace `features = ["futures-io"]` with `features = ["futures"]`; `futures` now implies `std`.
+
+FEATURES
+
+- Add tuple `Extend<Among<_, _, _>>` and `FromIterator<Among<_, _, _>>` implementations for collecting each variant into its own collection.
+- Add the remaining core formatting trait implementations and `core::fmt::Write` forwarding.
+- Make `core::error::Error` available without the `std` feature.
+- Add reverse conversions from `Among` to both complete nested `Either` shapes.
+- Add eager `left_and`, `middle_and`, and `right_and` combinators plus heterogeneous `as_deref` and `as_deref_mut` views.
+- Forward stable vectored I/O, buffered skipping, and seek-position methods to the active payload, including futures and Tokio vectored writes.
+- Add mapping fallbacks, lazy default insertion, replacement, and single-variant conversion helpers; add `try_left!`, `try_middle!`, and `try_right!` early-return macros.
+- Propagate caller locations through panicking extraction and feature-gated `Either` conversion methods.
+- Make `futures` and `tokio` imply `std`, and keep optional dependency features private to the manifest.
+
+CI
+
+- Add fixed-MSRV, bare-metal, strict-documentation, package, and SemVer compatibility gates; make Clippy and coverage wait for release gates.
+
+DOCS
+
+- Document serde helper functions and untagged deserialization order, clarify three-variant wording, and add a release checklist.
+
 # 0.2.0 (Apr 23rd, 2026)
 
 BREAKING

@@ -2,6 +2,11 @@ use either::Either;
 
 use super::Among;
 
+mod private {
+  pub trait EitherOkExtSealed {}
+  pub trait EitherErrExtSealed {}
+}
+
 impl<L, M, R> Among<L, M, R> {
   /// Try to convert the `Among` to `Either<L, M>`. If the `Among` is `Right`, it will return an error.
   ///
@@ -58,6 +63,7 @@ impl<L, M, R> Among<L, M, R> {
   /// # Panics
   ///
   /// Panics if `self` is `Among::Right`.
+  #[track_caller]
   #[inline]
   pub fn into_left_middle(self) -> Either<L, M> {
     match self {
@@ -122,6 +128,7 @@ impl<L, M, R> Among<L, M, R> {
   /// # Panics
   ///
   /// Panics if `self` is `Among::Left`.
+  #[track_caller]
   #[inline]
   pub fn into_middle_right(self) -> Either<M, R> {
     match self {
@@ -189,6 +196,7 @@ impl<L, M, R> Among<L, M, R> {
   /// # Panics
   ///
   /// Panics if `self` is `Among::Middle`.
+  #[track_caller]
   #[inline]
   pub fn into_left_right(self) -> Either<L, R> {
     match self {
@@ -296,18 +304,30 @@ impl<A, B, C> From<Either<A, Either<B, C>>> for Among<A, B, C> {
   }
 }
 
-impl<A, B, C> From<Either<A, B>> for Among<A, B, C> {
+impl<A, B, C> From<Among<A, B, C>> for Either<Either<A, B>, C> {
   #[inline]
-  fn from(either: Either<A, B>) -> Among<A, B, C> {
-    match either {
-      Either::Left(a) => Among::Left(a),
-      Either::Right(b) => Among::Middle(b),
+  fn from(among: Among<A, B, C>) -> Self {
+    match among {
+      Among::Left(a) => Either::Left(Either::Left(a)),
+      Among::Middle(b) => Either::Left(Either::Right(b)),
+      Among::Right(c) => Either::Right(c),
+    }
+  }
+}
+
+impl<A, B, C> From<Among<A, B, C>> for Either<A, Either<B, C>> {
+  #[inline]
+  fn from(among: Among<A, B, C>) -> Self {
+    match among {
+      Among::Left(a) => Either::Left(a),
+      Among::Middle(b) => Either::Right(Either::Left(b)),
+      Among::Right(c) => Either::Right(Either::Right(c)),
     }
   }
 }
 
 /// An extension trait for `Result<Either<A, B>, _>` that provides additional methods.
-pub trait EitherOkExt<E, A, B> {
+pub trait EitherOkExt<E, A, B>: private::EitherOkExtSealed {
   /// Apply the function `f` on the value in the `Left` variant if it is present rewrapping the
   /// result in `Left`.
   fn map_left<F, U>(self, f: F) -> Result<Either<U, B>, E>
@@ -320,6 +340,8 @@ pub trait EitherOkExt<E, A, B> {
   where
     F: FnOnce(B) -> U;
 }
+
+impl<E, A, B> private::EitherOkExtSealed for Result<Either<A, B>, E> {}
 
 impl<E, A, B> EitherOkExt<E, A, B> for Result<Either<A, B>, E> {
   #[inline]
@@ -340,7 +362,7 @@ impl<E, A, B> EitherOkExt<E, A, B> for Result<Either<A, B>, E> {
 }
 
 /// An extension trait for `Result<T, Either<A, B>>` that provides additional methods.
-pub trait EitherErrExt<T, A, B> {
+pub trait EitherErrExt<T, A, B>: private::EitherErrExtSealed {
   /// Apply the function `f` on the value in the `Left` variant if it is present rewrapping the
   /// result in `Left`.
   fn map_err_left<F, U>(self, f: F) -> Result<T, Either<U, B>>
@@ -353,6 +375,8 @@ pub trait EitherErrExt<T, A, B> {
   where
     F: FnOnce(B) -> U;
 }
+
+impl<T, A, B> private::EitherErrExtSealed for Result<T, Either<A, B>> {}
 
 impl<T, A, B> EitherErrExt<T, A, B> for Result<T, Either<A, B>> {
   #[inline]

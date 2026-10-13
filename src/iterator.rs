@@ -11,7 +11,7 @@ macro_rules! wrap_among {
     };
 }
 
-/// Iterator that maps left or right iterators to corresponding `Among`-wrapped items.
+/// Iterator that maps `Among` variant iterators to corresponding `Among`-wrapped items.
 ///
 /// This struct is created by the [`Among::factor_into_iter`],
 /// [`factor_iter`][Among::factor_iter],
@@ -41,7 +41,44 @@ where
   }
 }
 
-/// `Among<L, M, R>` is an iterator if both `L` and `R` are iterators.
+/// Extends three collections with values from the matching `Among` variant.
+impl<A, B, C, L, M, R> Extend<Among<L, M, R>> for (A, B, C)
+where
+  A: Extend<L>,
+  B: Extend<M>,
+  C: Extend<R>,
+{
+  fn extend<T>(&mut self, iter: T)
+  where
+    T: IntoIterator<Item = Among<L, M, R>>,
+  {
+    iter.into_iter().for_each(move |item| match item {
+      // TODO: use `Extend::extend_one` <https://github.com/rust-lang/rust/issues/72631>
+      Left(item) => self.0.extend(iter::once(item)),
+      Middle(item) => self.1.extend(iter::once(item)),
+      Right(item) => self.2.extend(iter::once(item)),
+    });
+  }
+}
+
+/// Collects `Left`, `Middle`, and `Right` items into separate collections.
+impl<A, B, C, L, M, R> iter::FromIterator<Among<L, M, R>> for (A, B, C)
+where
+  A: Default + Extend<L>,
+  B: Default + Extend<M>,
+  C: Default + Extend<R>,
+{
+  fn from_iter<T>(iter: T) -> Self
+  where
+    T: IntoIterator<Item = Among<L, M, R>>,
+  {
+    let mut collections = (A::default(), B::default(), C::default());
+    collections.extend(iter);
+    collections
+  }
+}
+
+/// `Among<L, M, R>` is an iterator if `L`, `M`, and `R` are iterators.
 impl<L, M, R> Iterator for Among<L, M, R>
 where
   L: Iterator,

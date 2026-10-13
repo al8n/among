@@ -3,22 +3,23 @@
 
 use super::{Among, Left, Middle, Right};
 
-/// Provides methods for converting a type `Self` into among a [`Left`] [`Middle`] or [`Right`]
-/// variant of [`Among<Self, Self>`](Among).
+/// Provides methods for converting `Self` into a [`Left`], [`Middle`], or [`Right`]
+/// variant of [`Among<Self, Self, Self>`](Among).
 ///
-/// The [`into_among`](IntoAmong::into_among) method takes a [`bool`] to determine
-/// whether to convert to [`Left`] or [`Right`].
+/// The [`into_among`](IntoAmong::into_among) method takes an [`Option<bool>`]
+/// to determine whether to convert to [`Left`], [`Middle`], or [`Right`].
 ///
 /// The [`into_among_with`](IntoAmong::into_among_with) method takes a
-/// [predicate function](FnOnce) to determine whether to convert to [`Left`] [`Middle`] or [`Right`].
+/// [predicate function](FnOnce) to determine whether to convert to [`Left`],
+/// [`Middle`], or [`Right`].
 pub trait IntoAmong: Sized {
-  /// Converts `self` into a [`Left`] variant of [`Among<Self, Self>`](Among)
+  /// Converts `self` into a [`Left`] variant of [`Among<Self, Self, Self>`](Among).
   /// if `into_left` is `Some(true)`.
   ///
-  /// Converts `self` into a [`Middle`] variant of [`Among<Self, Self>`](Among)
+  /// Converts `self` into a [`Middle`] variant of [`Among<Self, Self, Self>`](Among).
   /// if `into_left` is `None`.
   ///
-  /// Converts `self` into a [`Right`] variant of [`Among<Self, Self>`](Among)
+  /// Converts `self` into a [`Right`] variant of [`Among<Self, Self, Self>`](Among).
   /// if `into_left` is `Some(false)`.
   ///
   /// ## Examples
@@ -44,13 +45,13 @@ pub trait IntoAmong: Sized {
     }
   }
 
-  /// Converts `self` into a [`Left`] variant of [`Among<Self, Self>`](Among)
+  /// Converts `self` into a [`Left`] variant of [`Among<Self, Self, Self>`](Among).
   /// if `into_left(&self)` returns `Some(true)`.
   ///
-  /// Converts `self` into a [`Middle`] variant of [`Among<Self, Self>`](Among)
+  /// Converts `self` into a [`Middle`] variant of [`Among<Self, Self, Self>`](Among).
   /// if `into_left(&self)` returns `None`.
   ///
-  /// Converts `self` into a [`Right`] variant of [`Among<Self, Self>`](Among)
+  /// Converts `self` into a [`Right`] variant of [`Among<Self, Self, Self>`](Among).
   /// if `into_left(&self)` returns `Some(false)`.
   ///
   /// ## Examples

@@ -23,33 +23,39 @@ The enum `Among` with variants `Left`, `Middle` and `Right` and trait implementa
 
 ## Installation
 
-- Use with default feature
-  
-  ```toml
-  [dependencies]
-  among = "0.2"
-  ```
+```toml
+[dependencies]
+among = "1.0.0-rc.1"
+```
 
-- Use without `std` and `alloc`
+For a `no_std` dependency without optional integrations:
 
-  ```toml
-  [dependencies]
-  among = { version = "0.2", default-features = false }
-  ```
+```toml
+[dependencies]
+among = { version = "1.0.0-rc.1", default-features = false }
+```
 
-- Enable `futures` feature to enable trait implementation including `futures::io::AsyncRead`, `futures::io::AsyncBufRead`, `futures::io::AsyncWrite`, and `futures::io::AsyncSeek`.
-  
-  ```toml
-  [dependencies]
-  among = { version = "0.2", features = ["futures", "std"] }
-  ```
+## Feature contract
 
-- Enable `tokio` feature to enable trait implementation including `tokio::io::AsyncRead`, `tokio::io::AsyncBufRead`, `tokio::io::AsyncWrite` and `tokio::io::AsyncSeek`.
+| Feature | Enables | Notes |
+| --- | --- | --- |
+| `std` (default) | Standard-library integrations and direct vectored/seek forwarding | Enables `std` support in optional dependencies. |
+| `either` | `Either` conversions and extension traits | Available in `no_std`. |
+| `serde` | `serde` derives and untagged helpers | Uses `alloc`; available in `no_std` environments with allocation. |
+| `futures` | `futures-io` async I/O trait implementations, including vectored I/O | Implies `std`. |
+| `tokio` | Tokio async I/O trait implementations, including vectored writes | Implies `std`. |
 
-  ```toml
-  [dependencies]
-  among = { version = "0.2", features = ["tokio", "std"] }
-  ```
+For example, enable async I/O support without separately listing `std`:
+
+```toml
+[dependencies]
+among = { version = "1.0.0-rc.1", features = ["futures"] }
+```
+
+```toml
+[dependencies]
+among = { version = "1.0.0-rc.1", features = ["tokio"] }
+```
 
 ## Pedigree
 
@@ -69,4 +75,3 @@ Copyright (c) 2026 Al Liu.
 [doc-url]: https://docs.rs/among
 [crates-url]: https://crates.io/crates/among
 [codecov-url]: https://app.codecov.io/gh/al8n/among/
-[zh-cn-url]: https://github.com/al8n/among/tree/main/README-zh_CN.md

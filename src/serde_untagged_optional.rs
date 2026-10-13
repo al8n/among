@@ -5,6 +5,10 @@
 //! For example, we may have a field which is generally `Map<String, i32>`
 //! but in typical cases `Vec<String>` would suffice, too.
 //!
+//! During deserialization, untagged values are tried in declaration order:
+//! [`crate::Among::Left`], then [`crate::Among::Middle`], then [`crate::Among::Right`]. This
+//! helper requires allocation through the crate's `serde` feature.
+//!
 //! ```rust
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! use among::Among;
@@ -43,6 +47,7 @@ enum Among<L, M, R> {
   Right(R),
 }
 
+/// Serialize an optional [`Among`](super::Among) without its externally tagged variant name.
 pub fn serialize<L, M, R, S>(
   this: &Option<super::Among<L, M, R>>,
   serializer: S,
@@ -62,6 +67,7 @@ where
   untagged.serialize(serializer)
 }
 
+/// Deserialize an optional untagged [`Among`](super::Among), trying Left, Middle, then Right.
 pub fn deserialize<'de, L, M, R, D>(
   deserializer: D,
 ) -> Result<Option<super::Among<L, M, R>>, D::Error>
