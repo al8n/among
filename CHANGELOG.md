@@ -1,4 +1,4 @@
-# 1.0.0-rc.1 (Unreleased)
+# 1.0.0 (Oct 13th, 2026)
 
 BREAKING
 

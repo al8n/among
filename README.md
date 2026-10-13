@@ -25,14 +25,14 @@ The enum `Among` with variants `Left`, `Middle` and `Right` and trait implementa
 
 ```toml
 [dependencies]
-among = "1.0.0-rc.1"
+among = "1.0.0"
 ```
 
 For a `no_std` dependency without optional integrations:
 
 ```toml
 [dependencies]
-among = { version = "1.0.0-rc.1", default-features = false }
+among = { version = "1.0.0", default-features = false }
 ```
 
 ## Feature contract
@@ -49,12 +49,12 @@ For example, enable async I/O support without separately listing `std`:
 
 ```toml
 [dependencies]
-among = { version = "1.0.0-rc.1", features = ["futures"] }
+among = { version = "1.0.0", features = ["futures"] }
 ```
 
 ```toml
 [dependencies]
-among = { version = "1.0.0-rc.1", features = ["tokio"] }
+among = { version = "1.0.0", features = ["tokio"] }
 ```
 
 ## Pedigree
